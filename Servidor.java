@@ -1,6 +1,10 @@
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
@@ -14,8 +18,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 
 public class Servidor {
 
@@ -23,6 +30,11 @@ public class Servidor {
     static final String URL = "jdbc:mysql://localhost:3306/panalera_db";
     static final String USUARIO_BD = "root";
     static final String CLAVE_BD = "tu_clave";
+
+    // Cuenta de Gmail que ENVÍA los avisos (la de la pañalera)
+    static final String CORREO_ORIGEN = "tu_correo@gmail.com";
+    // Contraseña de aplicación de Google (16 letras), NO la contraseña normal del Gmail
+    static final String CLAVE_CORREO = "tu_clave_de_aplicacion";
 
     public static void main(String[] args) throws IOException {
         HttpServer servidor = HttpServer.create(new InetSocketAddress(8080), 0);
@@ -38,7 +50,7 @@ public class Servidor {
     // Recibe el mail, lo busca en MySQL y responde con el rol
     static void iniciarSesion(HttpExchange ex) throws IOException {
         if (!"POST".equals(ex.getRequestMethod())) {
-            enviar(ex, 405, "text/plain; charset=UTF-8", "Método no permitido");
+            servirArchivo(ex); // un GET a /registro.html es una página, no el formulario
             return;
         }
 
@@ -78,7 +90,20 @@ public class Servidor {
 
         try {
             crearUsuario(nombre, email, rol);
-            enviar(ex, 201, "text/plain; charset=UTF-8", "Usuario creado correctamente.");
+
+            String respuesta = "Usuario creado correctamente.";
+            if (correosActivados()) {
+                // Se envía en un hilo aparte para no hacer esperar al usuario
+                new Thread(() -> {
+                    try {
+                        enviarBienvenida(email, nombre, rol);
+                    } catch (IOException e) {
+                        System.out.println("No se pudo enviar el correo: " + e.getMessage());
+                    }
+                }).start();
+                respuesta += " Te enviamos un aviso a tu mail.";
+            }
+            enviar(ex, 201, "text/plain; charset=UTF-8", respuesta);
 
         } catch (IllegalArgumentException e) {
             enviar(ex, 400, "text/plain; charset=UTF-8", e.getMessage());
@@ -96,7 +121,7 @@ public class Servidor {
         if (nombre.isEmpty()) {
             throw new IllegalArgumentException("Ingrese su nombre.");
         }
-        if (email.isEmpty() || !email.contains("@")) {
+        if (!email.matches("^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$")) {
             throw new IllegalArgumentException("Ingrese un mail válido.");
         }
         if (!rol.equals("ADMINISTRADOR") && !rol.equals("CLIENTE")) {
@@ -128,6 +153,86 @@ public class Servidor {
             }
         }
         return datos;
+    }
+
+    // ---------- Envío de correo (SMTP de Gmail, sin librerías externas) ----------
+
+    static boolean correosActivados() {
+        return !CORREO_ORIGEN.equals("tu_correo@gmail.com")
+            && !CLAVE_CORREO.equals("tu_clave_de_aplicacion");
+    }
+
+    static void enviarBienvenida(String destino, String nombre, String rol) throws IOException {
+        String tipo = rol.equals("ADMINISTRADOR") ? "administrador" : "cliente";
+        String texto = "Hola " + nombre + ",\r\n\r\n"
+            + "Se creó una cuenta de " + tipo + " en Pañalera y Perfumería con este mail ("
+            + destino + ").\r\n\r\n"
+            + "Si no fuiste vos, ignorá este mensaje.\r\n";
+        enviarCorreo(destino, "Tu cuenta en Pañalera y Perfumería", texto);
+    }
+
+    static void enviarCorreo(String destino, String asunto, String texto) throws IOException {
+        SSLSocketFactory fabrica = (SSLSocketFactory) SSLSocketFactory.getDefault();
+
+        try (SSLSocket socket = (SSLSocket) fabrica.createSocket("smtp.gmail.com", 465)) {
+            socket.setSoTimeout(15000);
+            BufferedReader in = new BufferedReader(
+                new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+            BufferedWriter out = new BufferedWriter(
+                new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
+
+            leerRespuesta(in, "220");
+            comando(out, in, "EHLO localhost", "250");
+            comando(out, in, "AUTH LOGIN", "334");
+            comando(out, in, base64(CORREO_ORIGEN), "334");
+            comando(out, in, base64(CLAVE_CORREO.replace(" ", "")), "235");
+            comando(out, in, "MAIL FROM:<" + CORREO_ORIGEN + ">", "250");
+            comando(out, in, "RCPT TO:<" + destino + ">", "250");
+            comando(out, in, "DATA", "354");
+
+            String mensaje = "From: " + codificar("Pañalera y Perfumería") + " <" + CORREO_ORIGEN + ">\r\n"
+                + "To: <" + destino + ">\r\n"
+                + "Subject: " + codificar(asunto) + "\r\n"
+                + "MIME-Version: 1.0\r\n"
+                + "Content-Type: text/plain; charset=UTF-8\r\n"
+                + "Content-Transfer-Encoding: base64\r\n\r\n"
+                + Base64.getMimeEncoder().encodeToString(texto.getBytes(StandardCharsets.UTF_8));
+
+            comando(out, in, mensaje + "\r\n.", "250"); // el punto solo en una línea cierra el mensaje
+            out.write("QUIT\r\n");
+            out.flush();
+        }
+    }
+
+    // Manda una línea al servidor de correo y verifica el código de respuesta
+    static void comando(BufferedWriter out, BufferedReader in, String texto, String esperado)
+            throws IOException {
+        out.write(texto + "\r\n");
+        out.flush();
+        leerRespuesta(in, esperado);
+    }
+
+    static void leerRespuesta(BufferedReader in, String esperado) throws IOException {
+        String linea;
+        do {
+            linea = in.readLine();
+            if (linea == null) {
+                throw new IOException("El servidor de correo cortó la conexión.");
+            }
+        } while (linea.length() > 3 && linea.charAt(3) == '-'); // "250-..." = siguen más líneas
+
+        if (!linea.startsWith(esperado)) {
+            throw new IOException("Respuesta inesperada del servidor de correo: " + linea);
+        }
+    }
+
+    static String base64(String texto) {
+        return Base64.getEncoder().encodeToString(texto.getBytes(StandardCharsets.UTF_8));
+    }
+
+    // Permite tildes y ñ en el asunto y el nombre del remitente
+    static String codificar(String texto) {
+        return "=?UTF-8?B?" + base64(texto) + "?=";
     }
 
     // Misma búsqueda que en la versión Swing
