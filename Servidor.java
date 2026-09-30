@@ -44,7 +44,7 @@ public class Servidor {
         servidor.createContext("/registro", Servidor::registrar);  // crea un usuario nuevo
 
         servidor.start();
-        System.out.println("Servidor iniciado. Abrí http://localhost:8080 en el navegador");
+        System.out.println("Servidor v3 iniciado. Abrí http://localhost:8080 en el navegador");
     }
 
     // Recibe el mail, lo busca en MySQL y responde con el rol
@@ -79,7 +79,7 @@ public class Servidor {
     // Recibe nombre, mail y rol, y guarda el usuario nuevo en MySQL
     static void registrar(HttpExchange ex) throws IOException {
         if (!"POST".equals(ex.getRequestMethod())) {
-            enviar(ex, 405, "text/plain; charset=UTF-8", "Método no permitido");
+            servirArchivo(ex); // un GET a /registro.html es una página, no el formulario
             return;
         }
 
