@@ -18,9 +18,14 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
@@ -29,7 +34,7 @@ public class Servidor {
     // Datos de conexión a MySQL (cambiar la clave por la tuya)
     static final String URL = "jdbc:mysql://localhost:3306/panalera_db";
     static final String USUARIO_BD = "root";
-    static final String CLAVE_BD = "";
+    static final String CLAVE_BD = "tu_clave";
 
     // Cuenta de Gmail que ENVÍA los avisos (la de la pañalera)
     static final String CORREO_ORIGEN = "tu_correo@gmail.com";
@@ -44,24 +49,22 @@ public class Servidor {
         servidor.createContext("/registro", Servidor::registrar);  // crea un usuario nuevo
 
         servidor.start();
-        System.out.println("Servidor v3 iniciado. Abrí http://localhost:8080 en el navegador");
+        System.out.println("Servidor v4 iniciado. Abrí http://localhost:8080 en el navegador");
     }
 
-    // Recibe el mail, lo busca en MySQL y responde con el rol
+    // Recibe mail y contraseña, los comprueba en MySQL y responde con el rol
     static void iniciarSesion(HttpExchange ex) throws IOException {
         if (!"POST".equals(ex.getRequestMethod())) {
             servirArchivo(ex); // un GET a /registro.html es una página, no el formulario
             return;
         }
 
-        String cuerpo = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        String email = "";
-        if (cuerpo.startsWith("email=")) {
-            email = URLDecoder.decode(cuerpo.substring(6), StandardCharsets.UTF_8);
-        }
+        Map<String, String> datos = leerFormulario(ex);
+        String email = datos.getOrDefault("email", "");
+        String clave = datos.getOrDefault("clave", "");
 
         try {
-            Usuario u = buscarUsuario(email);
+            Usuario u = buscarUsuario(email, clave);
             String json = "{\"rol\":\"" + u.rol + "\",\"nombre\":\""
                           + u.nombre.replace("\"", "\\\"") + "\"}";
             enviar(ex, 200, "application/json; charset=UTF-8", json);
@@ -69,14 +72,14 @@ public class Servidor {
         } catch (IllegalArgumentException e) {
             enviar(ex, 400, "text/plain; charset=UTF-8", e.getMessage());
         } catch (UsuarioNoEncontradoException e) {
-            enviar(ex, 404, "text/plain; charset=UTF-8", e.getMessage());
+            enviar(ex, 401, "text/plain; charset=UTF-8", e.getMessage());
         } catch (SQLException e) {
             e.printStackTrace();
             enviar(ex, 500, "text/plain; charset=UTF-8", "Error de conexión con la base de datos.");
         }
     }
 
-    // Recibe nombre, mail y rol, y guarda el usuario nuevo en MySQL
+    // Recibe nombre, mail, contraseña y rol, y guarda el usuario nuevo en MySQL
     static void registrar(HttpExchange ex) throws IOException {
         if (!"POST".equals(ex.getRequestMethod())) {
             servirArchivo(ex); // un GET a /registro.html es una página, no el formulario
@@ -87,9 +90,10 @@ public class Servidor {
         String nombre = datos.getOrDefault("nombre", "").trim();
         String email = datos.getOrDefault("email", "").trim().toLowerCase();
         String rol = datos.getOrDefault("rol", "");
+        String clave = datos.getOrDefault("clave", "");
 
         try {
-            crearUsuario(nombre, email, rol);
+            crearUsuario(nombre, email, rol, clave);
 
             String respuesta = "Usuario creado correctamente.";
             if (correosActivados()) {
@@ -117,7 +121,7 @@ public class Servidor {
     }
 
     // INSERT del usuario nuevo (primero valida los datos)
-    static void crearUsuario(String nombre, String email, String rol) throws SQLException {
+    static void crearUsuario(String nombre, String email, String rol, String clave) throws SQLException {
         if (nombre.isEmpty()) {
             throw new IllegalArgumentException("Ingrese su nombre.");
         }
@@ -127,8 +131,11 @@ public class Servidor {
         if (!rol.equals("ADMINISTRADOR") && !rol.equals("CLIENTE")) {
             throw new IllegalArgumentException("Rol inválido.");
         }
+        if (clave.length() < 6) {
+            throw new IllegalArgumentException("La contraseña debe tener al menos 6 caracteres.");
+        }
 
-        String sql = "INSERT INTO usuarios (nombre, email, rol) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO usuarios (nombre, email, rol, clave) VALUES (?, ?, ?, ?)";
 
         try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -136,6 +143,7 @@ public class Servidor {
             ps.setString(1, nombre);
             ps.setString(2, email);
             ps.setString(3, rol);
+            ps.setString(4, generarHash(clave)); // nunca se guarda la contraseña en texto
             ps.executeUpdate();
         }
     }
@@ -235,15 +243,18 @@ public class Servidor {
         return "=?UTF-8?B?" + base64(texto) + "?=";
     }
 
-    // Misma búsqueda que en la versión Swing
-    static Usuario buscarUsuario(String email)
+    // Busca el usuario por mail y comprueba la contraseña
+    static Usuario buscarUsuario(String email, String clave)
             throws UsuarioNoEncontradoException, SQLException {
 
         if (email == null || email.isBlank() || !email.contains("@")) {
             throw new IllegalArgumentException("Ingrese un mail válido.");
         }
+        if (clave == null || clave.isEmpty()) {
+            throw new IllegalArgumentException("Ingrese su contraseña.");
+        }
 
-        String sql = "SELECT nombre, email, rol FROM usuarios WHERE email = ?";
+        String sql = "SELECT nombre, email, rol, clave FROM usuarios WHERE email = ?";
 
         try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -251,21 +262,63 @@ public class Servidor {
             ps.setString(1, email.trim().toLowerCase());
 
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
+                if (rs.next() && verificarClave(clave, rs.getString("clave"))) {
                     return new Usuario(rs.getString("nombre"),
                                        rs.getString("email"),
                                        rs.getString("rol"));
                 }
             }
         }
-        throw new UsuarioNoEncontradoException("No existe un usuario con ese mail.");
+        // Mismo mensaje si falla el mail o la contraseña (no da pistas)
+        throw new UsuarioNoEncontradoException("Mail o contraseña incorrectos.");
+    }
+
+    // ---------- Contraseñas: se guardan "hasheadas" (PBKDF2 + sal), nunca en texto ----------
+
+    static final int ITERACIONES = 65536;
+
+    // Devuelve "sal:hash" en Base64
+    static String generarHash(String clave) {
+        try {
+            byte[] sal = new byte[16];
+            new SecureRandom().nextBytes(sal);
+            byte[] hash = pbkdf2(clave, sal);
+            return Base64.getEncoder().encodeToString(sal) + ":"
+                 + Base64.getEncoder().encodeToString(hash);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("No se pudo proteger la contraseña.", e);
+        }
+    }
+
+    // Recalcula el hash con la misma sal y lo compara con el guardado
+    static boolean verificarClave(String clave, String guardado) {
+        if (guardado == null) {
+            return false;
+        }
+        String[] partes = guardado.split(":");
+        if (partes.length != 2) {
+            return false;
+        }
+        try {
+            byte[] sal = Base64.getDecoder().decode(partes[0]);
+            byte[] esperado = Base64.getDecoder().decode(partes[1]);
+            return MessageDigest.isEqual(esperado, pbkdf2(clave, sal));
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    static byte[] pbkdf2(String clave, byte[] sal) throws GeneralSecurityException {
+        PBEKeySpec spec = new PBEKeySpec(clave.toCharArray(), sal, ITERACIONES, 256);
+        return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+                               .generateSecret(spec).getEncoded();
     }
 
     // Entrega los archivos HTML/CSS/JS de la carpeta "web"
     static void servirArchivo(HttpExchange ex) throws IOException {
         String ruta = ex.getRequestURI().getPath();
         if (ruta.equals("/")) {
-            ruta = "/login.html";
+            ruta = "/InicioDeSesion.html";
         }
 
         Path base = Paths.get("web").toAbsolutePath().normalize();

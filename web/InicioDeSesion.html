@@ -22,9 +22,14 @@
             <input type="email" class="form-control" id="email"
                    placeholder="nombre@ejemplo.com" required autofocus>
           </div>
+          <div class="mb-3">
+            <label for="clave" class="form-label">Contraseña</label>
+            <input type="password" class="form-control" id="clave" required>
+          </div>
           <button type="submit" class="btn btn-primary w-100">Ingresar</button>
         </form>
-       <p class="text-center mt-3 mb-0"><a href="registro.html">Crear usuario</a></p>
+
+        <p class="text-center mt-3 mb-0"><a href="registro.html">Crear usuario</a></p>
       </div>
     </div>
   </div>
@@ -38,12 +43,14 @@
       error.classList.add("d-none");
 
       const email = document.getElementById("email").value;
+      const clave = document.getElementById("clave").value;
 
       try {
         const res = await fetch("/login", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: "email=" + encodeURIComponent(email)
+              + "&clave=" + encodeURIComponent(clave)
         });
 
         if (!res.ok) {
