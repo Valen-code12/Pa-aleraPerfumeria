@@ -24,6 +24,8 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import javax.net.ssl.SSLSocket;
@@ -33,53 +35,100 @@ public class Servidor {
 
     // Datos de conexión a MySQL (cambiar la clave por la tuya)
     static final String URL = "jdbc:mysql://localhost:3306/panalera_db";
-    static final String USUARIO_BD = "panaleralaplacita";
-    static final String CLAVE_BD = "marypedrocb26";
+    static final String USUARIO_BD = "root";
+    static final String CLAVE_BD = "";
 
     // Cuenta de Gmail que ENVÍA los avisos (la de la pañalera)
     static final String CORREO_ORIGEN = "tu_correo@gmail.com";
     // Contraseña de aplicación de Google (16 letras), NO la contraseña normal del Gmail
     static final String CLAVE_CORREO = "tu_clave_de_aplicacion";
 
+    // Reglas de los códigos de verificación
+    static final long VIGENCIA_MS = 10 * 60 * 1000;      // el código vale 10 minutos
+    static final long ESPERA_REENVIO_MS = 60 * 1000;     // hay que esperar 1 minuto para pedir otro
+    static final int MAX_INTENTOS = 5;                   // intentos fallidos antes de anularlo
+
     public static void main(String[] args) throws IOException {
         HttpServer servidor = HttpServer.create(new InetSocketAddress(8080), 0);
 
-        servidor.createContext("/", Servidor::servirArchivo);     // páginas de la carpeta web
-        servidor.createContext("/login", Servidor::iniciarSesion); // recibe el mail
-        servidor.createContext("/registro", Servidor::registrar);  // crea un usuario nuevo
+        servidor.createContext("/", Servidor::servirArchivo);                     // páginas de la carpeta web
+        servidor.createContext("/login", Servidor::iniciarSesion);                // paso 1: mail + contraseña
+        servidor.createContext("/login/verificar", Servidor::verificarLogin);     // paso 2: código
+        servidor.createContext("/registro", Servidor::registrar);                 // paso 1: datos del usuario
+        servidor.createContext("/registro/verificar", Servidor::verificarRegistro); // paso 2: código
+        servidor.createContext("/recuperar", Servidor::recuperar);                // paso 1: pide el código
+        servidor.createContext("/recuperar/confirmar", Servidor::confirmarRecuperacion); // paso 2: código + clave nueva
+
+        // Varios hilos: mientras se envía un mail no se bloquea a los demás usuarios
+        servidor.setExecutor(Executors.newCachedThreadPool());
 
         servidor.start();
-        System.out.println("Servidor v4 iniciado. Abrí http://localhost:8080 en el navegador");
+        System.out.println("Servidor v5 iniciado. Abrí http://localhost:8080 en el navegador");
+        if (!correosActivados()) {
+            System.out.println("AVISO: el correo no está configurado. Los códigos se van a mostrar acá en la consola.");
+        }
     }
 
-    // Recibe mail y contraseña, los comprueba en MySQL y responde con el rol
+    // ---------- INICIO DE SESIÓN (2 pasos) ----------
+
+    // Paso 1: comprueba mail y contraseña y, si están bien, envía un código al mail
     static void iniciarSesion(HttpExchange ex) throws IOException {
         if (!"POST".equals(ex.getRequestMethod())) {
-            servirArchivo(ex); // un GET a /registro.html es una página, no el formulario
+            servirArchivo(ex); // un GET a /login.html es una página, no el formulario
             return;
         }
 
         Map<String, String> datos = leerFormulario(ex);
-        String email = datos.getOrDefault("email", "");
+        String email = datos.getOrDefault("email", "").trim().toLowerCase();
         String clave = datos.getOrDefault("clave", "");
 
         try {
             Usuario u = buscarUsuario(email, clave);
-            String json = "{\"rol\":\"" + u.rol + "\",\"nombre\":\""
-                          + u.nombre.replace("\"", "\\\"") + "\"}";
-            enviar(ex, 200, "application/json; charset=UTF-8", json);
+            emitirCodigo("LOGIN", email, u.nombre, null, null);
+            enviar(ex, 200, "text/plain; charset=UTF-8", "Te enviamos un código a tu mail.");
 
         } catch (IllegalArgumentException e) {
             enviar(ex, 400, "text/plain; charset=UTF-8", e.getMessage());
         } catch (UsuarioNoEncontradoException e) {
             enviar(ex, 401, "text/plain; charset=UTF-8", e.getMessage());
+        } catch (IllegalStateException e) {
+            enviar(ex, 429, "text/plain; charset=UTF-8", e.getMessage());
+        } catch (CorreoException e) {
+            enviar(ex, 500, "text/plain; charset=UTF-8", e.getMessage());
         } catch (SQLException e) {
             e.printStackTrace();
             enviar(ex, 500, "text/plain; charset=UTF-8", "Error de conexión con la base de datos.");
         }
     }
 
-    // Recibe nombre, mail, contraseña y rol, y guarda el usuario nuevo en MySQL
+    // Paso 2: comprueba el código y responde con el rol
+    static void verificarLogin(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            servirArchivo(ex);
+            return;
+        }
+
+        Map<String, String> datos = leerFormulario(ex);
+        String email = datos.getOrDefault("email", "").trim().toLowerCase();
+        String codigo = datos.getOrDefault("codigo", "").trim();
+
+        try {
+            CodigoPendiente c = validarCodigo("LOGIN", email, codigo);
+            String json = "{\"rol\":\"" + escaparJson(c.rol(email)) + "\",\"nombre\":\""
+                          + escaparJson(c.nombre) + "\"}";
+            enviar(ex, 200, "application/json; charset=UTF-8", json);
+
+        } catch (IllegalArgumentException e) {
+            enviar(ex, 400, "text/plain; charset=UTF-8", e.getMessage());
+        } catch (SQLException e) {
+            e.printStackTrace();
+            enviar(ex, 500, "text/plain; charset=UTF-8", "Error de conexión con la base de datos.");
+        }
+    }
+
+    // ---------- REGISTRO (2 pasos) ----------
+
+    // Paso 1: valida los datos y envía el código. Todavía NO se crea el usuario.
     static void registrar(HttpExchange ex) throws IOException {
         if (!"POST".equals(ex.getRequestMethod())) {
             servirArchivo(ex); // un GET a /registro.html es una página, no el formulario
@@ -93,21 +142,55 @@ public class Servidor {
         String clave = datos.getOrDefault("clave", "");
 
         try {
-            crearUsuario(nombre, email, rol, clave);
+            validarRegistro(nombre, email, rol, clave);
 
-            String respuesta = "Usuario creado correctamente.";
+            if (existeEmail(email)) {
+                enviar(ex, 409, "text/plain; charset=UTF-8", "Ya existe un usuario con ese mail.");
+                return;
+            }
+
+            // Los datos quedan en memoria hasta que el usuario confirme el código
+            emitirCodigo("REGISTRO", email, nombre, rol, generarHash(clave));
+            enviar(ex, 200, "text/plain; charset=UTF-8", "Te enviamos un código a tu mail.");
+
+        } catch (IllegalArgumentException e) {
+            enviar(ex, 400, "text/plain; charset=UTF-8", e.getMessage());
+        } catch (IllegalStateException e) {
+            enviar(ex, 429, "text/plain; charset=UTF-8", e.getMessage());
+        } catch (CorreoException e) {
+            enviar(ex, 500, "text/plain; charset=UTF-8", e.getMessage());
+        } catch (SQLException e) {
+            e.printStackTrace();
+            enviar(ex, 500, "text/plain; charset=UTF-8", "Error de conexión con la base de datos.");
+        }
+    }
+
+    // Paso 2: si el código es correcto, guarda el usuario y envía el mail de bienvenida
+    static void verificarRegistro(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            servirArchivo(ex);
+            return;
+        }
+
+        Map<String, String> datos = leerFormulario(ex);
+        String email = datos.getOrDefault("email", "").trim().toLowerCase();
+        String codigo = datos.getOrDefault("codigo", "").trim();
+
+        try {
+            CodigoPendiente c = validarCodigo("REGISTRO", email, codigo);
+            insertarUsuario(c.nombre, email, c.rol, c.claveHash);
+
             if (correosActivados()) {
                 // Se envía en un hilo aparte para no hacer esperar al usuario
                 new Thread(() -> {
                     try {
-                        enviarBienvenida(email, nombre, rol);
+                        enviarBienvenida(email, c.nombre, c.rol);
                     } catch (IOException e) {
                         System.out.println("No se pudo enviar el correo: " + e.getMessage());
                     }
                 }).start();
-                respuesta += " Te enviamos un aviso a tu mail.";
             }
-            enviar(ex, 201, "text/plain; charset=UTF-8", respuesta);
+            enviar(ex, 201, "text/plain; charset=UTF-8", "Usuario creado correctamente.");
 
         } catch (IllegalArgumentException e) {
             enviar(ex, 400, "text/plain; charset=UTF-8", e.getMessage());
@@ -120,8 +203,148 @@ public class Servidor {
         }
     }
 
-    // INSERT del usuario nuevo (primero valida los datos)
-    static void crearUsuario(String nombre, String email, String rol, String clave) throws SQLException {
+    // ---------- RECUPERAR CONTRASEÑA (2 pasos) ----------
+
+    // Paso 1: si el mail existe, envía un código. La respuesta es SIEMPRE la misma,
+    // así nadie puede averiguar qué mails están registrados.
+    static void recuperar(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            servirArchivo(ex);
+            return;
+        }
+
+        Map<String, String> datos = leerFormulario(ex);
+        String email = datos.getOrDefault("email", "").trim().toLowerCase();
+
+        if (!email.matches("^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$")) {
+            enviar(ex, 400, "text/plain; charset=UTF-8", "Ingrese un mail válido.");
+            return;
+        }
+
+        // Todo en un hilo aparte: así tarda lo mismo exista o no el mail
+        new Thread(() -> {
+            try {
+                String nombre = buscarNombre(email);
+                if (nombre != null) {
+                    emitirCodigo("RECUPERACION", email, nombre, null, null);
+                }
+            } catch (Exception e) {
+                System.out.println("Recuperación: " + e.getMessage());
+            }
+        }).start();
+
+        enviar(ex, 200, "text/plain; charset=UTF-8",
+               "Si el mail está registrado, te enviamos un código.");
+    }
+
+    // Paso 2: comprueba el código, cambia la contraseña y avisa por mail
+    static void confirmarRecuperacion(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) {
+            servirArchivo(ex);
+            return;
+        }
+
+        Map<String, String> datos = leerFormulario(ex);
+        String email = datos.getOrDefault("email", "").trim().toLowerCase();
+        String codigo = datos.getOrDefault("codigo", "").trim();
+        String clave = datos.getOrDefault("clave", "");
+
+        try {
+            // Se revisa la contraseña ANTES de usar el código, para no gastar un intento por un error de tipeo
+            if (clave.length() < 6) {
+                throw new IllegalArgumentException("La contraseña debe tener al menos 6 caracteres.");
+            }
+
+            CodigoPendiente c = validarCodigo("RECUPERACION", email, codigo);
+            actualizarClave(email, generarHash(clave));
+
+            if (correosActivados()) {
+                new Thread(() -> {
+                    try {
+                        enviarClaveCambiada(email, c.nombre);
+                    } catch (IOException e) {
+                        System.out.println("No se pudo enviar el correo: " + e.getMessage());
+                    }
+                }).start();
+            }
+            enviar(ex, 200, "text/plain; charset=UTF-8",
+                   "Contraseña actualizada. Ya podés iniciar sesión.");
+
+        } catch (IllegalArgumentException e) {
+            enviar(ex, 400, "text/plain; charset=UTF-8", e.getMessage());
+        } catch (SQLException e) {
+            e.printStackTrace();
+            enviar(ex, 500, "text/plain; charset=UTF-8", "Error de conexión con la base de datos.");
+        }
+    }
+
+    // ---------- Códigos de verificación (se guardan en memoria) ----------
+
+    static final SecureRandom ALEATORIO = new SecureRandom();
+
+    // Clave del mapa: "PROPOSITO:mail" (ej. "LOGIN:ana@mail.com")
+    static final Map<String, CodigoPendiente> codigos = new ConcurrentHashMap<>();
+
+    // Genera un código de 6 dígitos, lo guarda y lo envía por mail
+    static void emitirCodigo(String proposito, String email, String nombre, String rol, String claveHash)
+            throws CorreoException {
+
+        long ahora = System.currentTimeMillis();
+        codigos.values().removeIf(c -> c.expira < ahora); // limpia los vencidos
+
+        String llave = proposito + ":" + email;
+        CodigoPendiente previo = codigos.get(llave);
+        if (previo != null && ahora - previo.creado < ESPERA_REENVIO_MS) {
+            throw new IllegalStateException("Esperá un minuto antes de pedir otro código.");
+        }
+
+        String codigo = String.format("%06d", ALEATORIO.nextInt(1_000_000));
+
+        if (correosActivados()) {
+            try {
+                enviarCodigo(email, nombre, proposito, codigo);
+            } catch (IOException e) {
+                System.out.println("No se pudo enviar el correo: " + e.getMessage());
+                throw new CorreoException("No se pudo enviar el correo. Intentá de nuevo en unos minutos.");
+            }
+        } else {
+            // Modo prueba: sin Gmail configurado el código se muestra en la consola
+            System.out.println("[MODO PRUEBA] Código " + proposito + " para " + email + ": " + codigo);
+        }
+
+        codigos.put(llave, new CodigoPendiente(codigo, ahora + VIGENCIA_MS, ahora, nombre, rol, claveHash));
+    }
+
+    // Comprueba el código ingresado. Si es correcto lo consume (sirve una sola vez).
+    static synchronized CodigoPendiente validarCodigo(String proposito, String email, String ingresado) {
+        String llave = proposito + ":" + email;
+        CodigoPendiente c = codigos.get(llave);
+
+        if (c == null) {
+            throw new IllegalArgumentException("No hay un código pendiente. Pedí uno nuevo.");
+        }
+        if (System.currentTimeMillis() > c.expira) {
+            codigos.remove(llave);
+            throw new IllegalArgumentException("El código venció. Pedí uno nuevo.");
+        }
+        if (!MessageDigest.isEqual(c.codigo.getBytes(StandardCharsets.UTF_8),
+                                   ingresado.getBytes(StandardCharsets.UTF_8))) {
+            c.intentos++;
+            if (c.intentos >= MAX_INTENTOS) {
+                codigos.remove(llave);
+                throw new IllegalArgumentException("Demasiados intentos. Pedí un código nuevo.");
+            }
+            throw new IllegalArgumentException("Código incorrecto. Te quedan "
+                                               + (MAX_INTENTOS - c.intentos) + " intentos.");
+        }
+
+        codigos.remove(llave);
+        return c;
+    }
+
+    // ---------- Base de datos ----------
+
+    static void validarRegistro(String nombre, String email, String rol, String clave) {
         if (nombre.isEmpty()) {
             throw new IllegalArgumentException("Ingrese su nombre.");
         }
@@ -134,7 +357,28 @@ public class Servidor {
         if (clave.length() < 6) {
             throw new IllegalArgumentException("La contraseña debe tener al menos 6 caracteres.");
         }
+    }
 
+    static boolean existeEmail(String email) throws SQLException {
+        return buscarNombre(email) != null;
+    }
+
+    // Devuelve el nombre del usuario con ese mail, o null si no existe
+    static String buscarNombre(String email) throws SQLException {
+        String sql = "SELECT nombre FROM usuarios WHERE email = ?";
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, email);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString("nombre") : null;
+            }
+        }
+    }
+
+    // INSERT del usuario nuevo (la clave ya llega hasheada)
+    static void insertarUsuario(String nombre, String email, String rol, String claveHash) throws SQLException {
         String sql = "INSERT INTO usuarios (nombre, email, rol, clave) VALUES (?, ?, ?, ?)";
 
         try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
@@ -143,7 +387,19 @@ public class Servidor {
             ps.setString(1, nombre);
             ps.setString(2, email);
             ps.setString(3, rol);
-            ps.setString(4, generarHash(clave)); // nunca se guarda la contraseña en texto
+            ps.setString(4, claveHash); // nunca se guarda la contraseña en texto
+            ps.executeUpdate();
+        }
+    }
+
+    static void actualizarClave(String email, String claveHash) throws SQLException {
+        String sql = "UPDATE usuarios SET clave = ? WHERE email = ?";
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, claveHash);
+            ps.setString(2, email);
             ps.executeUpdate();
         }
     }
@@ -163,6 +419,10 @@ public class Servidor {
         return datos;
     }
 
+    static String escaparJson(String texto) {
+        return texto.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
     // ---------- Envío de correo (SMTP de Gmail, sin librerías externas) ----------
 
     static boolean correosActivados() {
@@ -177,6 +437,31 @@ public class Servidor {
             + destino + ").\r\n\r\n"
             + "Si no fuiste vos, ignorá este mensaje.\r\n";
         enviarCorreo(destino, "Tu cuenta en Pañalera y Perfumería", texto);
+    }
+
+    // Aviso de que la contraseña se cambió (por si no fue el dueño de la cuenta)
+    static void enviarClaveCambiada(String destino, String nombre) throws IOException {
+        String texto = "Hola " + nombre + ",\r\n\r\n"
+            + "La contraseña de tu cuenta en Pañalera y Perfumería se cambió correctamente.\r\n\r\n"
+            + "Si no fuiste vos, pedí otro cambio de contraseña desde la página de inicio de sesión "
+            + "y avisanos.\r\n";
+        enviarCorreo(destino, "Tu contraseña fue cambiada", texto);
+    }
+
+    static void enviarCodigo(String destino, String nombre, String proposito, String codigo)
+            throws IOException {
+        String motivo;
+        switch (proposito) {
+            case "REGISTRO":     motivo = "terminar de crear tu cuenta"; break;
+            case "RECUPERACION": motivo = "restablecer tu contraseña"; break;
+            default:             motivo = "iniciar sesión"; break;
+        }
+        String texto = "Hola " + nombre + ",\r\n\r\n"
+            + "Tu código para " + motivo + " en Pañalera y Perfumería es:\r\n\r\n"
+            + "    " + codigo + "\r\n\r\n"
+            + "Vence en " + (VIGENCIA_MS / 60000) + " minutos. No lo compartas con nadie.\r\n"
+            + "Si no fuiste vos, ignorá este mensaje.\r\n";
+        enviarCorreo(destino, "Tu código de verificación: " + codigo, texto);
     }
 
     static void enviarCorreo(String destino, String asunto, String texto) throws IOException {
@@ -281,7 +566,7 @@ public class Servidor {
     static String generarHash(String clave) {
         try {
             byte[] sal = new byte[16];
-            new SecureRandom().nextBytes(sal);
+            ALEATORIO.nextBytes(sal);
             byte[] hash = pbkdf2(clave, sal);
             return Base64.getEncoder().encodeToString(sal) + ":"
                  + Base64.getEncoder().encodeToString(hash);
@@ -364,8 +649,53 @@ public class Servidor {
         }
     }
 
+    // Un código esperando ser confirmado, junto con los datos que hay que recordar
+    static class CodigoPendiente {
+        final String codigo;
+        final long expira;
+        final long creado;
+        final String nombre;
+        final String rol;        // solo en REGISTRO
+        final String claveHash;  // solo en REGISTRO
+        int intentos = 0;
+
+        CodigoPendiente(String codigo, long expira, long creado,
+                        String nombre, String rol, String claveHash) {
+            this.codigo = codigo;
+            this.expira = expira;
+            this.creado = creado;
+            this.nombre = nombre;
+            this.rol = rol;
+            this.claveHash = claveHash;
+        }
+
+        // En el login el rol no se guarda en memoria: se consulta a la base al confirmar
+        String rol(String email) throws SQLException {
+            if (rol != null) {
+                return rol;
+            }
+            String sql = "SELECT rol FROM usuarios WHERE email = ?";
+            try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+                 PreparedStatement ps = con.prepareStatement(sql)) {
+                ps.setString(1, email);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getString("rol");
+                    }
+                }
+            }
+            throw new IllegalArgumentException("El usuario ya no existe.");
+        }
+    }
+
     static class UsuarioNoEncontradoException extends Exception {
         UsuarioNoEncontradoException(String mensaje) {
+            super(mensaje);
+        }
+    }
+
+    static class CorreoException extends Exception {
+        CorreoException(String mensaje) {
             super(mensaje);
         }
     }

@@ -16,9 +16,10 @@
 
         <div id="mensaje" class="alert d-none" role="alert"></div>
 
+        <!-- Paso 1: datos del usuario -->
         <form id="formRegistro">
           <div class="mb-3">
-            <label for="nombre" class="form-label">Nombre (o si se desesa, también el segundo nombre) y apellido</label>
+            <label for="nombre" class="form-label">Nombre (o si se desea, también el segundo nombre) y apellido</label>
             <input type="text" class="form-control" id="nombre" required autofocus>
           </div>
           <div class="mb-3">
@@ -46,6 +47,25 @@
           </div>
         </form>
 
+        <!-- Paso 2: código enviado al mail -->
+        <form id="formCodigo" class="d-none">
+          <p class="text-muted">
+            Enviamos un código de 6 dígitos a <strong id="mailDestino"></strong>.
+            La cuenta se crea cuando lo ingreses.
+          </p>
+          <div class="mb-3">
+            <label for="codigo" class="form-label">Código de verificación</label>
+            <input type="text" class="form-control text-center fs-4" id="codigo"
+                   inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                   autocomplete="one-time-code" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 mb-2">Verificar y crear usuario</button>
+          <div class="d-flex justify-content-between">
+            <button type="button" id="btnReenviar" class="btn btn-link p-0" disabled>Reenviar código</button>
+            <button type="button" id="btnVolver" class="btn btn-link p-0">Volver</button>
+          </div>
+        </form>
+
         <p class="text-center mt-3 mb-0">
           <a href="InicioDeSesion.html">Volver al inicio de sesión</a>
         </p>
@@ -55,11 +75,57 @@
 
   <script>
     const form = document.getElementById("formRegistro");
+    const formCodigo = document.getElementById("formCodigo");
     const mensaje = document.getElementById("mensaje");
+    const btnReenviar = document.getElementById("btnReenviar");
+    let datosRegistro = null;  // lo cargado en el paso 1 (para reenviar el código)
+    let temporizador = null;
 
     function mostrar(texto, tipo) {
       mensaje.textContent = texto;
       mensaje.className = "alert alert-" + tipo;
+    }
+
+    async function post(url, datos) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(datos).toString()
+      });
+      return { ok: res.ok, texto: await res.text() };
+    }
+
+    // Bloquea "Reenviar código" durante 60 segundos
+    function iniciarEspera() {
+      let segundos = 60;
+      clearInterval(temporizador);
+      btnReenviar.disabled = true;
+      btnReenviar.textContent = "Reenviar código (" + segundos + ")";
+      temporizador = setInterval(() => {
+        segundos--;
+        if (segundos <= 0) {
+          clearInterval(temporizador);
+          btnReenviar.disabled = false;
+          btnReenviar.textContent = "Reenviar código";
+        } else {
+          btnReenviar.textContent = "Reenviar código (" + segundos + ")";
+        }
+      }, 1000);
+    }
+
+    // Paso 1 -> el servidor valida los datos y envía el código
+    async function pedirCodigo() {
+      try {
+        const r = await post("/registro", datosRegistro);
+        if (!r.ok) {
+          mostrar(r.texto, "danger");
+          return false;
+        }
+        return true;
+      } catch (err) {
+        mostrar("No se pudo conectar con el servidor.", "danger");
+        return false;
+      }
     }
 
     async function crear(rol) {
@@ -71,28 +137,59 @@
         return;
       }
 
-      const cuerpo = "nombre=" + encodeURIComponent(document.getElementById("nombre").value)
-                   + "&email=" + encodeURIComponent(document.getElementById("email").value)
-                   + "&clave=" + encodeURIComponent(clave)
-                   + "&rol=" + rol;
-      try {
-        const res = await fetch("/registro", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: cuerpo
-        });
-        const texto = await res.text();
+      datosRegistro = {
+        nombre: document.getElementById("nombre").value,
+        email: document.getElementById("email").value.trim(),
+        clave: clave,
+        rol: rol
+      };
 
-        if (res.ok) {
-          mostrar(texto + " Redirigiendo al inicio de sesión...", "success");
-          setTimeout(() => { window.location.href = "InicioDeSesion.html"; }, 1500);
+      if (await pedirCodigo()) {
+        document.getElementById("mailDestino").textContent = datosRegistro.email;
+        form.classList.add("d-none");
+        formCodigo.classList.remove("d-none");
+        document.getElementById("codigo").focus();
+        mostrar("Código enviado. Revisá tu mail (también la carpeta de spam).", "info");
+        iniciarEspera();
+      }
+    }
+
+    btnReenviar.addEventListener("click", async () => {
+      if (await pedirCodigo()) {
+        mostrar("Te enviamos un código nuevo.", "info");
+        iniciarEspera();
+      }
+    });
+
+    document.getElementById("btnVolver").addEventListener("click", () => {
+      clearInterval(temporizador);
+      mensaje.className = "alert d-none";
+      document.getElementById("codigo").value = "";
+      formCodigo.classList.add("d-none");
+      form.classList.remove("d-none");
+    });
+
+    // Paso 2 -> el servidor confirma el código y crea el usuario
+    formCodigo.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      try {
+        const r = await post("/registro/verificar", {
+          email: datosRegistro.email,
+          codigo: document.getElementById("codigo").value.trim()
+        });
+
+        if (r.ok) {
+          clearInterval(temporizador);
+          mostrar(r.texto + " Te enviamos un aviso a tu mail. Redirigiendo al inicio de sesión...", "success");
+          setTimeout(() => { window.location.href = "InicioDeSesion.html"; }, 2000);
         } else {
-          mostrar(texto, "danger");
+          mostrar(r.texto, "danger");
         }
       } catch (err) {
         mostrar("No se pudo conectar con el servidor.", "danger");
       }
-    }
+    });
   </script>
 </body>
 </html>

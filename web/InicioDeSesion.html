@@ -14,8 +14,9 @@
         <h4 class="text-center mb-1">Pañalera y Perfumería</h4>
         <p class="text-center text-muted mb-4">Iniciar sesión</p>
 
-        <div id="error" class="alert alert-danger d-none" role="alert"></div>
+        <div id="aviso" class="alert d-none" role="alert"></div>
 
+        <!-- Paso 1: mail y contraseña -->
         <form id="formLogin">
           <div class="mb-3">
             <label for="email" class="form-label">Mail</label>
@@ -25,42 +26,152 @@
           <div class="mb-3">
             <label for="clave" class="form-label">Contraseña</label>
             <input type="password" class="form-control" id="clave" required>
+            <div class="form-text text-end">
+              <a href="RecuperarClave.html">¿Olvidaste tu contraseña?</a>
+            </div>
           </div>
           <button type="submit" class="btn btn-primary w-100">Ingresar</button>
         </form>
 
-        <p class="text-center mt-3 mb-0"><a href="registro.html">Crear usuario</a></p>
+        <!-- Paso 2: código enviado al mail -->
+        <form id="formCodigo" class="d-none">
+          <p class="text-muted">
+            Enviamos un código de 6 dígitos a <strong id="mailDestino"></strong>.
+          </p>
+          <div class="mb-3">
+            <label for="codigo" class="form-label">Código de verificación</label>
+            <input type="text" class="form-control text-center fs-4" id="codigo"
+                   inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                   autocomplete="one-time-code" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 mb-2">Verificar</button>
+          <div class="d-flex justify-content-between">
+            <button type="button" id="btnReenviar" class="btn btn-link p-0" disabled>Reenviar código</button>
+            <button type="button" id="btnVolver" class="btn btn-link p-0">Volver</button>
+          </div>
+        </form>
+
+        <p class="text-center mt-3 mb-0" id="pie"><a href="Registro.html">Crear usuario</a></p>
       </div>
     </div>
   </div>
 
   <script>
-    const form = document.getElementById("formLogin");
-    const error = document.getElementById("error");
+    const formLogin = document.getElementById("formLogin");
+    const formCodigo = document.getElementById("formCodigo");
+    const aviso = document.getElementById("aviso");
+    const btnReenviar = document.getElementById("btnReenviar");
+    let credenciales = null;   // mail y contraseña del paso 1 (para reenviar el código)
+    let temporizador = null;
 
-    form.addEventListener("submit", async (e) => {
+    function mostrar(texto, tipo) {
+      aviso.textContent = texto;
+      aviso.className = "alert alert-" + tipo;
+    }
+
+    function ocultarAviso() {
+      aviso.className = "alert d-none";
+    }
+
+    async function post(url, datos) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(datos).toString()
+      });
+      return { ok: res.ok, texto: await res.text() };
+    }
+
+    // Bloquea "Reenviar código" durante 60 segundos
+    function iniciarEspera() {
+      let segundos = 60;
+      clearInterval(temporizador);
+      btnReenviar.disabled = true;
+      btnReenviar.textContent = "Reenviar código (" + segundos + ")";
+      temporizador = setInterval(() => {
+        segundos--;
+        if (segundos <= 0) {
+          clearInterval(temporizador);
+          btnReenviar.disabled = false;
+          btnReenviar.textContent = "Reenviar código";
+        } else {
+          btnReenviar.textContent = "Reenviar código (" + segundos + ")";
+        }
+      }, 1000);
+    }
+
+    // Paso 1 -> pide el código
+    async function pedirCodigo() {
+      try {
+        const r = await post("/login", credenciales);
+        if (!r.ok) {
+          mostrar(r.texto, "danger");
+          return false;
+        }
+        return true;
+      } catch (err) {
+        mostrar("No se pudo conectar con el servidor.", "danger");
+        return false;
+      }
+    }
+
+    formLogin.addEventListener("submit", async (e) => {
       e.preventDefault();
-      error.classList.add("d-none");
+      ocultarAviso();
 
-      const email = document.getElementById("email").value;
-      const clave = document.getElementById("clave").value;
+      credenciales = {
+        email: document.getElementById("email").value.trim(),
+        clave: document.getElementById("clave").value
+      };
+
+      if (await pedirCodigo()) {
+        document.getElementById("mailDestino").textContent = credenciales.email;
+        formLogin.classList.add("d-none");
+        document.getElementById("pie").classList.add("d-none");
+        formCodigo.classList.remove("d-none");
+        document.getElementById("codigo").focus();
+        mostrar("Código enviado. Revisá tu mail (también la carpeta de spam).", "info");
+        iniciarEspera();
+      }
+    });
+
+    btnReenviar.addEventListener("click", async () => {
+      ocultarAviso();
+      if (await pedirCodigo()) {
+        mostrar("Te enviamos un código nuevo.", "info");
+        iniciarEspera();
+      }
+    });
+
+    document.getElementById("btnVolver").addEventListener("click", () => {
+      clearInterval(temporizador);
+      ocultarAviso();
+      credenciales = null;
+      document.getElementById("codigo").value = "";
+      document.getElementById("clave").value = "";
+      formCodigo.classList.add("d-none");
+      formLogin.classList.remove("d-none");
+      document.getElementById("pie").classList.remove("d-none");
+    });
+
+    // Paso 2 -> confirma el código
+    formCodigo.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      ocultarAviso();
 
       try {
-        const res = await fetch("/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "email=" + encodeURIComponent(email)
-              + "&clave=" + encodeURIComponent(clave)
+        const r = await post("/login/verificar", {
+          email: credenciales.email,
+          codigo: document.getElementById("codigo").value.trim()
         });
 
-        if (!res.ok) {
-          error.textContent = await res.text();
-          error.classList.remove("d-none");
+        if (!r.ok) {
+          mostrar(r.texto, "danger");
           return;
         }
 
         // El servidor devuelve el rol según el mail
-        const usuario = await res.json();
+        const usuario = JSON.parse(r.texto);
         sessionStorage.setItem("nombre", usuario.nombre);
         sessionStorage.setItem("rol", usuario.rol);
 
@@ -71,8 +182,7 @@
         }
 
       } catch (err) {
-        error.textContent = "No se pudo conectar con el servidor.";
-        error.classList.remove("d-none");
+        mostrar("No se pudo conectar con el servidor.", "danger");
       }
     });
   </script>
