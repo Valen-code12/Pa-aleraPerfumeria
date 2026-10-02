@@ -214,14 +214,14 @@
     const boton = document.createElement("button");
     boton.type = "button";
     boton.className = "btn btn-outline-secondary d-flex align-items-center";
-    boton.innerHTML = OJO_ABIERTO;
+    boton.innerHTML = OJO_CERRADO;               // con puntitos: ojo cerrado
     boton.setAttribute("aria-label", "Mostrar contraseña");
     grupo.appendChild(boton);
 
     boton.addEventListener("click", () => {
       const oculto = campo.type === "password";
       campo.type = oculto ? "text" : "password";
-      boton.innerHTML = oculto ? OJO_CERRADO : OJO_ABIERTO;
+      boton.innerHTML = oculto ? OJO_ABIERTO : OJO_CERRADO;   // con caracteres: ojo abierto
       boton.setAttribute("aria-label", oculto ? "Ocultar contraseña" : "Mostrar contraseña");
     });
   });
