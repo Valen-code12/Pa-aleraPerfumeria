@@ -221,5 +221,28 @@
       }
     });
   </script>
+  <script>
+  // Agrega un botón "ojo" a cada campo de contraseña
+  document.querySelectorAll('input[type="password"]').forEach((campo) => {
+    const grupo = document.createElement("div");
+    grupo.className = "input-group";
+    campo.parentNode.insertBefore(grupo, campo);
+    grupo.appendChild(campo);
+
+    const boton = document.createElement("button");
+    boton.type = "button";
+    boton.className = "btn btn-outline-secondary";
+    boton.textContent = "👁️";
+    boton.setAttribute("aria-label", "Mostrar contraseña");
+    grupo.appendChild(boton);
+
+    boton.addEventListener("click", () => {
+      const oculto = campo.type === "password";
+      campo.type = oculto ? "text" : "password";
+      boton.textContent = oculto ? "🙈" : "👁️";
+      boton.setAttribute("aria-label", oculto ? "Ocultar contraseña" : "Mostrar contraseña");
+    });
+  });
+</script>
 </body>
 </html>
