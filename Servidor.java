@@ -625,6 +625,10 @@ public class Servidor {
         if (nombre.endsWith(".html")) tipo = "text/html; charset=UTF-8";
         else if (nombre.endsWith(".css")) tipo = "text/css; charset=UTF-8";
         else if (nombre.endsWith(".js")) tipo = "application/javascript; charset=UTF-8";
+        else if (nombre.endsWith(".png")) tipo = "image/png";
+        else if (nombre.endsWith(".jpg") || nombre.endsWith(".jpeg")) tipo = "image/jpeg";
+        else if (nombre.endsWith(".svg")) tipo = "image/svg+xml";
+        else if (nombre.endsWith(".ico")) tipo = "image/x-icon";
 
         enviar(ex, 200, tipo, Files.readAllBytes(archivo));
     }
