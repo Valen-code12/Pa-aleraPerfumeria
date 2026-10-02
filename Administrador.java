@@ -11,7 +11,7 @@ public class Administrador extends Persona {
     public String getTipo() { return "administrador"; }
 
     @Override
-    public String getPagina() { return "admin.html"; }
+    public String getPagina() { return "Administrador.html"; }
 
     // Más adelante: gestionarStock(), cargarProducto(), etc.
 }

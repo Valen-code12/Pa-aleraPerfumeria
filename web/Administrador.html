@@ -1,24 +1,283 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>La placita - Administrador</title>
-    <link rel="icon" type="image/jpeg" href="imagenes/panaleraIcono.jpg">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>La placita - Administrador</title>
+  <link rel="icon" type="image/jpeg" href="imagenes/panaleraIcono.jpg">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root { --turquesa: #1fb5a8; --turquesa-oscuro: #148c82; --verde: #9be23f; }
+    body { background: #f4f9f8; }
+    .barra { background: var(--turquesa); border-bottom: 4px solid var(--verde); }
+    .barra .logo { height: 56px; width: 56px; border-radius: 8px; }
+    .btn-menu { background: #fff; color: var(--turquesa-oscuro); font-weight: 600; border: 0; }
+    .btn-menu:hover, .btn-menu:focus { background: #e6fbf8; color: var(--turquesa-oscuro); }
+    .dropdown-item.active { background: var(--turquesa); }
+    .btn-principal { background: var(--turquesa); border-color: var(--turquesa); color: #fff; }
+    .btn-principal:hover { background: var(--turquesa-oscuro); border-color: var(--turquesa-oscuro); color: #fff; }
+    .tarjeta-dato { border: 0; border-top: 5px solid var(--turquesa); }
+    .tarjeta-dato.alerta { border-top-color: #f0ad4e; }
+    .tarjeta-dato.peligro { border-top-color: #dc3545; }
+    .tarjeta-dato .numero { font-size: 2.5rem; font-weight: 700; line-height: 1; }
+    .foto-local { min-height: 260px; border: 2px dashed var(--turquesa); border-radius: 12px; background: #fff; }
+    thead th { background: #dff5f2 !important; }
+  </style>
+</head>
 <body>
-    <div class="dropdown">
-      <button class="btn btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-        Dropdown button
-      </button>
-      <ul class="dropdown-menu">
-      <li><a class="dropdown-item" href="#">Action</a></li>
-      <li><a class="dropdown-item" href="#">Another action</a></li>
-      <li><a class="dropdown-item" href="#">Something else here</a></li>
-      </ul>
+  <!-- Barra superior: logo, menú y usuario -->
+  <header class="barra py-2">
+    <div class="container d-flex align-items-center gap-3">
+      <a href="Administrador.html"><img src="imagenes/panaleraIcono.jpg" alt="La Placita - Pañalera" class="logo"></a>
+ 
+      <div class="dropdown">
+        <button class="btn btn-menu dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Menú</button>
+        <ul class="dropdown-menu" id="menu">
+          <li><button class="dropdown-item active" data-seccion="inicio">Inicio</button></li>
+          <li><button class="dropdown-item" data-seccion="productos">Productos</button></li>
+          <li><button class="dropdown-item" data-seccion="proveedores">Proveedores</button></li>
+        </ul>
+      </div>
+ 
+      <div class="dropdown ms-auto">
+        <button class="btn btn-menu dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <span id="nombreUsuario">Administrador</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><button class="dropdown-item" id="btnSalir">Cerrar sesión</button></li>
+        </ul>
+      </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.min.js" integrity="sha384-G/EV+4j2dNv+tEPo3++6LCgdCROaejBqfUeNjuKAiuXbjrxilcCdDz6ZAVfHWe1Y" crossorigin="anonymous"></script>
+  </header>
+ 
+  <main class="container py-4">
+ 
+    <!-- INICIO: panel de control -->
+    <section id="inicio">
+      <h2 class="h4 mb-3">Panel de control</h2>
+      <div class="row g-3 mb-4">
+        <div class="col-12 col-md-4">
+          <div class="card tarjeta-dato shadow-sm"><div class="card-body">
+            <div class="text-muted">Total de productos</div>
+            <div class="numero" id="totalProductos">0</div>
+          </div></div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="card tarjeta-dato alerta shadow-sm"><div class="card-body">
+            <div class="text-muted">Productos con stock bajo</div>
+            <div class="numero" id="stockBajo">0</div>
+          </div></div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="card tarjeta-dato peligro shadow-sm"><div class="card-body">
+            <div class="text-muted">Productos sin stock</div>
+            <div class="numero" id="sinStock">0</div>
+          </div></div>
+        </div>
+      </div>
+ 
+      <div class="foto-local d-flex align-items-center justify-content-center text-muted mb-4">
+        Fotos del local
+      </div>
+      <div class="row text-center">
+        <div class="col-md-4 mb-2"><strong>Redes</strong><br><span class="text-muted">Instagram / Facebook</span></div>
+        <div class="col-md-4 mb-2"><strong>Contacto</strong><br><span class="text-muted">Teléfono / Celular</span></div>
+        <div class="col-md-4 mb-2"><strong>Ubicación</strong><br><span class="text-muted">Dirección del local</span></div>
+      </div>
+    </section>
+ 
+    <!-- PRODUCTOS -->
+    <section id="productos" class="d-none">
+      <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+        <button class="btn btn-principal" id="btnNuevoProducto">+ Nuevo producto</button>
+        <input type="search" class="form-control w-auto" id="filtro" placeholder="Filtrar por nombre, código o categoría">
+      </div>
+      <div class="table-responsive bg-white shadow-sm rounded">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>Producto</th><th>Código</th><th>Categoría</th><th>Stock</th><th>Precio</th><th>Edición</th></tr></thead>
+          <tbody id="tablaProductos"></tbody>
+        </table>
+      </div>
+    </section>
+ 
+    <!-- PROVEEDORES -->
+    <section id="proveedores" class="d-none">
+      <div class="mb-3"><button class="btn btn-principal" id="btnNuevoProveedor">+ Nuevo proveedor</button></div>
+      <div class="table-responsive bg-white shadow-sm rounded">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>Nombre</th><th>Contacto</th><th>Teléfono</th><th>Dirección</th><th>Edición</th></tr></thead>
+          <tbody id="tablaProveedores"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+ 
+  <!-- Ventana: producto -->
+  <div class="modal fade" id="modalProducto" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog"><form class="modal-content" id="formProducto">
+      <div class="modal-header"><h5 class="modal-title" id="tituloProducto">Nuevo producto</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label" for="pNombre">Nombre</label><input class="form-control" id="pNombre" required></div>
+        <div class="row">
+          <div class="col-6 mb-3"><label class="form-label" for="pCodigo">Código</label><input class="form-control" id="pCodigo" required></div>
+          <div class="col-6 mb-3"><label class="form-label" for="pCategoria">Categoría</label><input class="form-control" id="pCategoria" required></div>
+          <div class="col-6 mb-3"><label class="form-label" for="pPrecio">Precio ($)</label><input type="number" min="0" step="0.01" class="form-control" id="pPrecio" required></div>
+          <div class="col-6 mb-3"><label class="form-label" for="pStock">Cantidad disponible</label><input type="number" min="0" step="1" class="form-control" id="pStock" required></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-principal">Guardar</button></div>
+    </form></div>
+  </div>
+ 
+  <!-- Ventana: proveedor -->
+  <div class="modal fade" id="modalProveedor" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog"><form class="modal-content" id="formProveedor">
+      <div class="modal-header"><h5 class="modal-title" id="tituloProveedor">Nuevo proveedor</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label" for="vNombre">Nombre</label><input class="form-control" id="vNombre" required></div>
+        <div class="mb-3"><label class="form-label" for="vContacto">Contacto</label><input class="form-control" id="vContacto" required></div>
+        <div class="mb-3"><label class="form-label" for="vTelefono">Teléfono</label><input type="tel" class="form-control" id="vTelefono" required></div>
+        <div class="mb-3"><label class="form-label" for="vDireccion">Dirección</label><input class="form-control" id="vDireccion" required></div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+        <button type="submit" class="btn btn-principal">Guardar</button></div>
+    </form></div>
+  </div>
+ 
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Si no entró un administrador, vuelve al inicio de sesión
+    if (sessionStorage.getItem("rol") !== "ADMINISTRADOR") {
+      window.location.href = "InicioDeSesion.html";
+    }
+    document.getElementById("nombreUsuario").textContent = sessionStorage.getItem("nombre") || "Administrador";
+    document.getElementById("btnSalir").addEventListener("click", () => {
+      sessionStorage.clear();
+      window.location.href = "InicioDeSesion.html";
+    });
+ 
+    const STOCK_BAJO = 5;   // desde esta cantidad hacia abajo se avisa "stock bajo"
+    // Por ahora los datos viven en memoria. Más adelante se reemplazan por fetch("/productos") y fetch("/proveedores")
+    let productos = [];
+    let proveedores = [];
+    let editando = null;    // posición del elemento que se está editando (null = nuevo)
+ 
+    const $ = (id) => document.getElementById(id);
+    const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const modalProducto = new bootstrap.Modal($("modalProducto"));
+    const modalProveedor = new bootstrap.Modal($("modalProveedor"));
+ 
+    // Cambio de sección desde el menú
+    document.querySelectorAll("#menu [data-seccion]").forEach((b) => {
+      b.addEventListener("click", () => {
+        document.querySelectorAll("main > section").forEach((s) => s.classList.add("d-none"));
+        $(b.dataset.seccion).classList.remove("d-none");
+        document.querySelectorAll("#menu .dropdown-item").forEach((i) => i.classList.remove("active"));
+        b.classList.add("active");
+      });
+    });
+ 
+    function filaVacia(columnas, texto) {
+      return `<tr><td colspan="${columnas}" class="text-center text-muted py-4">${texto}</td></tr>`;
+    }
+ 
+    function botonesEdicion(i, tipo) {
+      return `<button class="btn btn-sm btn-outline-secondary me-1" onclick="editar${tipo}(${i})">Editar</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="eliminar${tipo}(${i})">Eliminar</button>`;
+    }
+ 
+    function dibujarProductos() {
+      const q = $("filtro").value.trim().toLowerCase();
+      const filas = productos.map((p, i) => ({ p, i })).filter(({ p }) =>
+        [p.nombre, p.codigo, p.categoria].some((v) => v.toLowerCase().includes(q)));
+      $("tablaProductos").innerHTML = filas.length ? filas.map(({ p, i }) => {
+        const clase = p.stock === 0 ? "text-danger fw-bold" : p.stock <= STOCK_BAJO ? "text-warning fw-bold" : "";
+        return `<tr><td>${esc(p.nombre)}</td><td>${esc(p.codigo)}</td><td>${esc(p.categoria)}</td>
+                <td class="${clase}">${p.stock}</td><td>$${p.precio.toFixed(2)}</td><td>${botonesEdicion(i, "Producto")}</td></tr>`;
+      }).join("") : filaVacia(6, "No hay productos para mostrar. Tocá + Nuevo producto para cargar el primero.");
+ 
+      $("totalProductos").textContent = productos.length;
+      $("sinStock").textContent = productos.filter((p) => p.stock === 0).length;
+      $("stockBajo").textContent = productos.filter((p) => p.stock > 0 && p.stock <= STOCK_BAJO).length;
+    }
+ 
+    function dibujarProveedores() {
+      $("tablaProveedores").innerHTML = proveedores.length ? proveedores.map((v, i) =>
+        `<tr><td>${esc(v.nombre)}</td><td>${esc(v.contacto)}</td><td>${esc(v.telefono)}</td>
+         <td>${esc(v.direccion)}</td><td>${botonesEdicion(i, "Proveedor")}</td></tr>`).join("")
+        : filaVacia(5, "Todavía no cargaste proveedores. Tocá + Nuevo proveedor.");
+    }
+ 
+    $("filtro").addEventListener("input", dibujarProductos);
+ 
+    // ----- Productos -----
+    $("btnNuevoProducto").addEventListener("click", () => {
+      editando = null;
+      $("formProducto").reset();
+      $("tituloProducto").textContent = "Nuevo producto";
+      modalProducto.show();
+    });
+    function editarProducto(i) {
+      const p = productos[i];
+      editando = i;
+      $("pNombre").value = p.nombre; $("pCodigo").value = p.codigo; $("pCategoria").value = p.categoria;
+      $("pPrecio").value = p.precio; $("pStock").value = p.stock;
+      $("tituloProducto").textContent = "Editar producto";
+      modalProducto.show();
+    }
+    function eliminarProducto(i) {
+      if (confirm("¿Eliminar \"" + productos[i].nombre + "\"?")) { productos.splice(i, 1); dibujarProductos(); }
+    }
+    $("formProducto").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const codigo = $("pCodigo").value.trim();
+      if (productos.some((p, i) => p.codigo === codigo && i !== editando)) {
+        alert("Ya existe un producto con ese código.");
+        return;
+      }
+      const nuevo = {
+        nombre: $("pNombre").value.trim(), codigo, categoria: $("pCategoria").value.trim(),
+        precio: parseFloat($("pPrecio").value), stock: parseInt($("pStock").value, 10)
+      };
+      if (editando === null) productos.push(nuevo); else productos[editando] = nuevo;
+      modalProducto.hide();
+      dibujarProductos();
+    });
+ 
+    // ----- Proveedores -----
+    $("btnNuevoProveedor").addEventListener("click", () => {
+      editando = null;
+      $("formProveedor").reset();
+      $("tituloProveedor").textContent = "Nuevo proveedor";
+      modalProveedor.show();
+    });
+    function editarProveedor(i) {
+      const v = proveedores[i];
+      editando = i;
+      $("vNombre").value = v.nombre; $("vContacto").value = v.contacto;
+      $("vTelefono").value = v.telefono; $("vDireccion").value = v.direccion;
+      $("tituloProveedor").textContent = "Editar proveedor";
+      modalProveedor.show();
+    }
+    function eliminarProveedor(i) {
+      if (confirm("¿Eliminar a \"" + proveedores[i].nombre + "\"?")) { proveedores.splice(i, 1); dibujarProveedores(); }
+    }
+    $("formProveedor").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const nuevo = {
+        nombre: $("vNombre").value.trim(), contacto: $("vContacto").value.trim(),
+        telefono: $("vTelefono").value.trim(), direccion: $("vDireccion").value.trim()
+      };
+      if (editando === null) proveedores.push(nuevo); else proveedores[editando] = nuevo;
+      modalProveedor.hide();
+      dibujarProveedores();
+    });
+ 
+    dibujarProductos();
+    dibujarProveedores();
+  </script>
 </body>
 </html>
