@@ -42,7 +42,7 @@
           <div class="mb-3">
             <label for="codigo" class="form-label">Código de verificación</label>
             <input type="text" class="form-control text-center fs-4" id="codigo"
-                   inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                   inputmode="numeric" maxlength="6"
                    autocomplete="one-time-code" required>
           </div>
           <button type="submit" class="btn btn-primary w-100 mb-2">Verificar</button>
@@ -64,6 +64,21 @@
     const btnReenviar = document.getElementById("btnReenviar");
     let credenciales = null;   // mail y contraseña del paso 1 (para reenviar el código)
     let temporizador = null;
+
+    // Deja solo números (si pegan "123 456" queda "123456")
+    document.getElementById("codigo").addEventListener("input", (e) => {
+    e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6);
+    });
+
+    // Si el navegador recarga la página al ir al mail, vuelve al paso del código
+    const mailGuardado = sessionStorage.getItem("loginEmail");
+    if (mailGuardado) {
+    document.getElementById("mailDestino").textContent = mailGuardado;
+    document.getElementById("email").value = mailGuardado;
+    formLogin.classList.add("d-none");
+    document.getElementById("pie").classList.add("d-none");
+    formCodigo.classList.remove("d-none");
+    }
 
     function mostrar(texto, tipo) {
       aviso.textContent = texto;
