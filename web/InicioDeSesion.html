@@ -67,17 +67,17 @@
 
     // Deja solo números (si pegan "123 456" queda "123456")
     document.getElementById("codigo").addEventListener("input", (e) => {
-    e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6);
+      e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6);
     });
 
     // Si el navegador recarga la página al ir al mail, vuelve al paso del código
     const mailGuardado = sessionStorage.getItem("loginEmail");
     if (mailGuardado) {
-    document.getElementById("mailDestino").textContent = mailGuardado;
-    document.getElementById("email").value = mailGuardado;
-    formLogin.classList.add("d-none");
-    document.getElementById("pie").classList.add("d-none");
-    formCodigo.classList.remove("d-none");
+      document.getElementById("mailDestino").textContent = mailGuardado;
+      document.getElementById("email").value = mailGuardado;
+      formLogin.classList.add("d-none");
+      document.getElementById("pie").classList.add("d-none");
+      formCodigo.classList.remove("d-none");
     }
 
     function mostrar(texto, tipo) {
@@ -141,6 +141,7 @@
       };
 
       if (await pedirCodigo()) {
+        sessionStorage.setItem("loginEmail", credenciales.email);
         document.getElementById("mailDestino").textContent = credenciales.email;
         formLogin.classList.add("d-none");
         document.getElementById("pie").classList.add("d-none");
@@ -153,6 +154,10 @@
 
     btnReenviar.addEventListener("click", async () => {
       ocultarAviso();
+      if (!credenciales) {
+        mostrar("Tocá Volver y entrá de nuevo para pedir otro código.", "warning");
+        return;
+      }
       if (await pedirCodigo()) {
         mostrar("Te enviamos un código nuevo.", "info");
         iniciarEspera();
@@ -160,6 +165,7 @@
     });
 
     document.getElementById("btnVolver").addEventListener("click", () => {
+      sessionStorage.removeItem("loginEmail");
       clearInterval(temporizador);
       ocultarAviso();
       credenciales = null;
@@ -177,7 +183,7 @@
 
       try {
         const r = await post("/login/verificar", {
-          email: credenciales.email,
+          email: sessionStorage.getItem("loginEmail") || credenciales.email,
           codigo: document.getElementById("codigo").value.trim()
         });
 
@@ -188,6 +194,7 @@
 
         // El servidor devuelve el rol según el mail
         const usuario = JSON.parse(r.texto);
+        sessionStorage.removeItem("loginEmail");
         sessionStorage.setItem("nombre", usuario.nombre);
         sessionStorage.setItem("rol", usuario.rol);
 
