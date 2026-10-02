@@ -175,11 +175,8 @@
         sessionStorage.setItem("nombre", usuario.nombre);
         sessionStorage.setItem("rol", usuario.rol);
 
-        if (usuario.rol === "ADMINISTRADOR") {
-          window.location.href = "admin.html";
-        } else {
-          window.location.href = "cliente.html";
-        }
+        // La página la decide el servidor (Administrador -> admin.html, Cliente -> cliente.html)
+        window.location.href = usuario.pagina;
 
       } catch (err) {
         mostrar("No se pudo conectar con el servidor.", "danger");

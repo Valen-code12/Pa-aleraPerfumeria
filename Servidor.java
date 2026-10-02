@@ -39,9 +39,9 @@ public class Servidor {
     static final String CLAVE_BD = "";
 
     // Cuenta de Gmail que ENVÍA los avisos (la de la pañalera)
-    static final String CORREO_ORIGEN = "laplacitapm@gmail.com";
+    static final String CORREO_ORIGEN = "tu_correo@gmail.com";
     // Contraseña de aplicación de Google (16 letras), NO la contraseña normal del Gmail
-    static final String CLAVE_CORREO = "sjuw vnfp grye mbnx";
+    static final String CLAVE_CORREO = "tu_clave_de_aplicacion";
 
     // Reglas de los códigos de verificación
     static final long VIGENCIA_MS = 10 * 60 * 1000;      // el código vale 10 minutos
@@ -83,8 +83,8 @@ public class Servidor {
         String clave = datos.getOrDefault("clave", "");
 
         try {
-            Usuario u = buscarUsuario(email, clave);
-            emitirCodigo("LOGIN", email, u.nombre, null, null);
+            Persona u = buscarUsuario(email, clave);
+            emitirCodigo("LOGIN", email, u.getNombre(), null, null);
             enviar(ex, 200, "text/plain; charset=UTF-8", "Te enviamos un código a tu mail.");
 
         } catch (IllegalArgumentException e) {
@@ -114,8 +114,13 @@ public class Servidor {
 
         try {
             CodigoPendiente c = validarCodigo("LOGIN", email, codigo);
-            String json = "{\"rol\":\"" + escaparJson(c.rol(email)) + "\",\"nombre\":\""
-                          + escaparJson(c.nombre) + "\"}";
+
+            // Según el rol de la base se crea un Administrador o un Cliente
+            Persona p = Persona.crear(c.rol(email), c.nombre, email);
+
+            String json = "{\"rol\":\"" + escaparJson(p.getRol()) + "\",\"nombre\":\""
+                          + escaparJson(p.getNombre()) + "\",\"pagina\":\""
+                          + escaparJson(p.getPagina()) + "\"}";
             enviar(ex, 200, "application/json; charset=UTF-8", json);
 
         } catch (IllegalArgumentException e) {
@@ -431,7 +436,7 @@ public class Servidor {
     }
 
     static void enviarBienvenida(String destino, String nombre, String rol) throws IOException {
-        String tipo = rol.equals("ADMINISTRADOR") ? "administrador" : "cliente";
+        String tipo = Persona.crear(rol, nombre, destino).getTipo();
         String texto = "Hola " + nombre + ",\r\n\r\n"
             + "Se creó una cuenta de " + tipo + " en Pañalera y Perfumería con este mail ("
             + destino + ").\r\n\r\n"
@@ -529,7 +534,7 @@ public class Servidor {
     }
 
     // Busca el usuario por mail y comprueba la contraseña
-    static Usuario buscarUsuario(String email, String clave)
+    static Persona buscarUsuario(String email, String clave)
             throws UsuarioNoEncontradoException, SQLException {
 
         if (email == null || email.isBlank() || !email.contains("@")) {
@@ -548,9 +553,9 @@ public class Servidor {
 
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next() && verificarClave(clave, rs.getString("clave"))) {
-                    return new Usuario(rs.getString("nombre"),
-                                       rs.getString("email"),
-                                       rs.getString("rol"));
+                    return Persona.crear(rs.getString("rol"),
+                                         rs.getString("nombre"),
+                                         rs.getString("email"));
                 }
             }
         }
@@ -633,19 +638,6 @@ public class Servidor {
         ex.sendResponseHeaders(codigo, datos.length);
         try (OutputStream os = ex.getResponseBody()) {
             os.write(datos);
-        }
-    }
-
-    // Clases anidadas (así no chocan con IniciodeSesion.java si lo dejás en la carpeta)
-    static class Usuario {
-        String nombre;
-        String email;
-        String rol; // "ADMINISTRADOR" o "CLIENTE"
-
-        Usuario(String nombre, String email, String rol) {
-            this.nombre = nombre;
-            this.email = email;
-            this.rol = rol;
         }
     }
 
