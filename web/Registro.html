@@ -209,6 +209,17 @@
     });
   </script>
   <script>
+  // Íconos de ojo (contorno con pestañas)
+  const OJO_ABIERTO = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M2 13C6 7.5 18 7.5 22 13C18 18.5 6 18.5 2 13Z"/>
+      <circle cx="12" cy="13" r="3.4"/><circle cx="12" cy="13" r="1.2" fill="currentColor"/>
+      <path d="M12 3V7M6 5.5L7 8.2M18 5.5L17 8.2M2.5 8L4 10.5M21.5 8L20 10.5"/></svg>`;
+  const OJO_CERRADO = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M2 11C6 16.5 18 16.5 22 11"/>
+      <path d="M12 15.2V19M6.5 14.2L5.5 17.5M17.5 14.2L18.5 17.5M3.4 12.6L2 15.3M20.6 12.6L22 15.3"/></svg>`;
+
   // Agrega un botón "ojo" a cada campo de contraseña
   document.querySelectorAll('input[type="password"]').forEach((campo) => {
     const grupo = document.createElement("div");
@@ -218,15 +229,15 @@
 
     const boton = document.createElement("button");
     boton.type = "button";
-    boton.className = "btn btn-outline-secondary";
-    boton.textContent = "👁️";
+    boton.className = "btn btn-outline-secondary d-flex align-items-center";
+    boton.innerHTML = OJO_ABIERTO;
     boton.setAttribute("aria-label", "Mostrar contraseña");
     grupo.appendChild(boton);
 
     boton.addEventListener("click", () => {
       const oculto = campo.type === "password";
       campo.type = oculto ? "text" : "password";
-      boton.textContent = oculto ? "🙈" : "👁️";
+      boton.innerHTML = oculto ? OJO_CERRADO : OJO_ABIERTO;
       boton.setAttribute("aria-label", oculto ? "Ocultar contraseña" : "Mostrar contraseña");
     });
   });
