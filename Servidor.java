@@ -39,9 +39,9 @@ public class Servidor {
     static final String CLAVE_BD = "";
 
     // Cuenta de Gmail que ENVÍA los avisos (la de la pañalera)
-    static final String CORREO_ORIGEN = "tu_correo@gmail.com";
+    static final String CORREO_ORIGEN = "laplacitapm@gmail.com";
     // Contraseña de aplicación de Google (16 letras), NO la contraseña normal del Gmail
-    static final String CLAVE_CORREO = "tu_clave_de_aplicacion";
+    static final String CLAVE_CORREO = "PedroMaryCB!";
 
     // Reglas de los códigos de verificación
     static final long VIGENCIA_MS = 10 * 60 * 1000;      // el código vale 10 minutos
