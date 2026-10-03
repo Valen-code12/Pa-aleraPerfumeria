@@ -135,7 +135,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     // Si no entró un administrador, vuelve al inicio de sesión
-    if (sessionStorage.getItem("rol") !== "ADMINISTRADOR") {
+    if (sessionStorage.getItem("rol") !== "ADMINISTRADOR" || !sessionStorage.getItem("token")) {
       window.location.href = "InicioDeSesion.html";
     }
     document.getElementById("nombreUsuario").textContent = sessionStorage.getItem("nombre") || "Administrador";
@@ -145,7 +145,7 @@
     });
  
     const STOCK_BAJO = 5;   // desde esta cantidad hacia abajo se avisa "stock bajo"
-    // Por ahora los datos viven en memoria. Más adelante se reemplazan por fetch("/productos") y fetch("/proveedores")
+    // Los datos se guardan en la base de datos a través del servidor (/api/productos y /api/proveedores)
     let productos = [];
     let proveedores = [];
     let editando = null;    // posición del elemento que se está editando (null = nuevo)
@@ -154,6 +154,37 @@
     const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const modalProducto = new bootstrap.Modal($("modalProducto"));
     const modalProveedor = new bootstrap.Modal($("modalProveedor"));
+
+    // Hace el pedido al servidor mandando el token de la sesión. Si algo falla, lanza un Error con el mensaje.
+    async function api(url, metodo = "GET", datos = null) {
+      const opciones = { method: metodo, headers: { "X-Token": sessionStorage.getItem("token") || "" } };
+      if (datos) {
+        opciones.headers["Content-Type"] = "application/x-www-form-urlencoded";
+        opciones.body = new URLSearchParams(datos).toString();
+      }
+      let res;
+      try {
+        res = await fetch(url, opciones);
+      } catch (err) {
+        throw new Error("No se pudo conectar con el servidor.");
+      }
+      const texto = await res.text();
+      if (res.status === 401) {            // sesión vencida (por ejemplo, se reinició el servidor)
+        sessionStorage.clear();
+        window.location.href = "InicioDeSesion.html";
+      }
+      if (!res.ok) throw new Error(texto);
+      return texto;
+    }
+
+    async function cargarProductos() {
+      try { productos = JSON.parse(await api("/api/productos")); } catch (err) { alert(err.message); }
+      dibujarProductos();
+    }
+    async function cargarProveedores() {
+      try { proveedores = JSON.parse(await api("/api/proveedores")); } catch (err) { alert(err.message); }
+      dibujarProveedores();
+    }
  
     // Cambio de sección desde el menú
     document.querySelectorAll("#menu [data-seccion]").forEach((b) => {
@@ -209,23 +240,25 @@
       $("tituloProducto").textContent = "Editar producto";
       modalProducto.show();
     }
-    function eliminarProducto(i) {
-      if (confirm("¿Eliminar \"" + productos[i].nombre + "\"?")) { productos.splice(i, 1); dibujarProductos(); }
+    async function eliminarProducto(i) {
+      if (!confirm("¿Eliminar \"" + productos[i].nombre + "\"?")) return;
+      try {
+        await api("/api/productos/" + productos[i].id, "DELETE");
+        await cargarProductos();
+      } catch (err) { alert(err.message); }
     }
-    $("formProducto").addEventListener("submit", (e) => {
+    $("formProducto").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const codigo = $("pCodigo").value.trim();
-      if (productos.some((p, i) => p.codigo === codigo && i !== editando)) {
-        alert("Ya existe un producto con ese código.");
-        return;
-      }
-      const nuevo = {
-        nombre: $("pNombre").value.trim(), codigo, categoria: $("pCategoria").value.trim(),
-        precio: parseFloat($("pPrecio").value), stock: parseInt($("pStock").value, 10)
+      const datos = {
+        nombre: $("pNombre").value.trim(), codigo: $("pCodigo").value.trim(), categoria: $("pCategoria").value.trim(),
+        precio: $("pPrecio").value, stock: $("pStock").value
       };
-      if (editando === null) productos.push(nuevo); else productos[editando] = nuevo;
-      modalProducto.hide();
-      dibujarProductos();
+      try {
+        if (editando === null) await api("/api/productos", "POST", datos);
+        else await api("/api/productos/" + productos[editando].id, "PUT", datos);
+        modalProducto.hide();
+        await cargarProductos();
+      } catch (err) { alert(err.message); }   // por ejemplo: "Ya existe un producto con ese código."
     });
  
     // ----- Proveedores -----
@@ -243,22 +276,29 @@
       $("tituloProveedor").textContent = "Editar proveedor";
       modalProveedor.show();
     }
-    function eliminarProveedor(i) {
-      if (confirm("¿Eliminar a \"" + proveedores[i].nombre + "\"?")) { proveedores.splice(i, 1); dibujarProveedores(); }
+    async function eliminarProveedor(i) {
+      if (!confirm("¿Eliminar a \"" + proveedores[i].nombre + "\"?")) return;
+      try {
+        await api("/api/proveedores/" + proveedores[i].id, "DELETE");
+        await cargarProveedores();
+      } catch (err) { alert(err.message); }
     }
-    $("formProveedor").addEventListener("submit", (e) => {
+    $("formProveedor").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const nuevo = {
+      const datos = {
         nombre: $("vNombre").value.trim(), contacto: $("vContacto").value.trim(),
         telefono: $("vTelefono").value.trim(), direccion: $("vDireccion").value.trim()
       };
-      if (editando === null) proveedores.push(nuevo); else proveedores[editando] = nuevo;
-      modalProveedor.hide();
-      dibujarProveedores();
+      try {
+        if (editando === null) await api("/api/proveedores", "POST", datos);
+        else await api("/api/proveedores/" + proveedores[editando].id, "PUT", datos);
+        modalProveedor.hide();
+        await cargarProveedores();
+      } catch (err) { alert(err.message); }
     });
  
-    dibujarProductos();
-    dibujarProveedores();
+    cargarProductos();
+    cargarProveedores();
   </script>
 </body>
 </html>

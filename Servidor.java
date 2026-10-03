@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.OutputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -58,6 +60,8 @@ public class Servidor {
         servidor.createContext("/registro/verificar", Servidor::verificarRegistro); // paso 2: código
         servidor.createContext("/recuperar", Servidor::recuperar);                // paso 1: pide el código
         servidor.createContext("/recuperar/confirmar", Servidor::confirmarRecuperacion); // paso 2: código + clave nueva
+        servidor.createContext("/api/productos", Servidor::productos);            // alta, baja, edición y lista (solo administrador)
+        servidor.createContext("/api/proveedores", Servidor::proveedores);        // alta, baja, edición y lista (solo administrador)
 
         // Varios hilos: mientras se envía un mail no se bloquea a los demás usuarios
         servidor.setExecutor(Executors.newCachedThreadPool());
@@ -118,9 +122,11 @@ public class Servidor {
             // Según el rol de la base se crea un Administrador o un Cliente
             Persona p = Persona.crear(c.rol(email), c.nombre, email);
 
+            // El token identifica la sesión: las rutas del administrador lo piden en cada pedido
             String json = "{\"rol\":\"" + escaparJson(p.getRol()) + "\",\"nombre\":\""
                           + escaparJson(p.getNombre()) + "\",\"pagina\":\""
-                          + escaparJson(p.getPagina()) + "\"}";
+                          + escaparJson(p.getPagina()) + "\",\"token\":\""
+                          + crearSesion(p.getRol()) + "\"}";
             enviar(ex, 200, "application/json; charset=UTF-8", json);
 
         } catch (IllegalArgumentException e) {
@@ -283,6 +289,307 @@ public class Servidor {
         }
     }
 
+    // ---------- Sesiones: al confirmar el código el servidor entrega un "token" ----------
+
+    // token -> rol. Las rutas del administrador piden el token en el encabezado X-Token
+    static final Map<String, String> sesiones = new ConcurrentHashMap<>();
+
+    static String crearSesion(String rol) {
+        byte[] bytes = new byte[32];
+        ALEATORIO.nextBytes(bytes);
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        sesiones.put(token, rol);
+        return token;
+    }
+
+    static boolean esAdministrador(HttpExchange ex) {
+        String token = ex.getRequestHeaders().getFirst("X-Token");
+        return token != null && "ADMINISTRADOR".equals(sesiones.get(token));
+    }
+
+    static final String TEXTO = "text/plain; charset=UTF-8";
+    static final String JSON = "application/json; charset=UTF-8";
+
+    // "/api/productos/5" -> 5 ; "/api/productos" -> null
+    static Integer idDeLaRuta(HttpExchange ex) {
+        String[] partes = ex.getRequestURI().getPath().split("/");   // ["", "api", "productos", "5"]
+        if (partes.length < 4) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(partes[3]);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Identificador inválido.");
+        }
+    }
+
+    // Texto obligatorio, sin espacios de más y con largo máximo
+    static String campo(Map<String, String> datos, String clave, String etiqueta, int max) {
+        String valor = datos.getOrDefault(clave, "").trim();
+        if (valor.isEmpty()) {
+            throw new IllegalArgumentException("Falta completar: " + etiqueta + ".");
+        }
+        if (valor.length() > max) {
+            throw new IllegalArgumentException(etiqueta + " es demasiado largo (máximo " + max + " caracteres).");
+        }
+        return valor;
+    }
+
+    // ---------- PRODUCTOS (solo administrador) ----------
+    //   GET    /api/productos      -> lista
+    //   POST   /api/productos      -> crea uno nuevo
+    //   PUT    /api/productos/5    -> edita el producto 5
+    //   DELETE /api/productos/5    -> elimina el producto 5
+
+    record Producto(String nombre, String codigo, String categoria, BigDecimal precio, int stock) {}
+
+    static void productos(HttpExchange ex) throws IOException {
+        if (!esAdministrador(ex)) {
+            enviar(ex, 401, TEXTO, "Sesión no válida. Iniciá sesión de nuevo.");
+            return;
+        }
+        try {
+            String metodo = ex.getRequestMethod();
+            Integer id = idDeLaRuta(ex);
+
+            if ("GET".equals(metodo) && id == null) {
+                enviar(ex, 200, JSON, listarProductos());
+            } else if ("POST".equals(metodo) && id == null) {
+                insertarProducto(leerProducto(leerFormulario(ex)));
+                enviar(ex, 201, TEXTO, "Producto guardado.");
+            } else if ("PUT".equals(metodo) && id != null) {
+                if (actualizarProducto(id, leerProducto(leerFormulario(ex)))) {
+                    enviar(ex, 200, TEXTO, "Producto actualizado.");
+                } else {
+                    enviar(ex, 404, TEXTO, "El producto ya no existe.");
+                }
+            } else if ("DELETE".equals(metodo) && id != null) {
+                if (eliminarProducto(id)) {
+                    enviar(ex, 200, TEXTO, "Producto eliminado.");
+                } else {
+                    enviar(ex, 404, TEXTO, "El producto ya no existe.");
+                }
+            } else {
+                enviar(ex, 405, TEXTO, "Operación no permitida.");
+            }
+
+        } catch (IllegalArgumentException e) {
+            enviar(ex, 400, TEXTO, e.getMessage());
+        } catch (SQLIntegrityConstraintViolationException e) {
+            // La columna codigo es UNIQUE: MySQL rechaza un código repetido
+            enviar(ex, 409, TEXTO, "Ya existe un producto con ese código.");
+        } catch (SQLException e) {
+            e.printStackTrace();
+            enviar(ex, 500, TEXTO, "Error de conexión con la base de datos.");
+        }
+    }
+
+    // Valida lo que llega del formulario y lo convierte en un Producto
+    static Producto leerProducto(Map<String, String> d) {
+        String nombre = campo(d, "nombre", "el nombre", 100);
+        String codigo = campo(d, "codigo", "el código", 50);
+        String categoria = campo(d, "categoria", "la categoría", 60);
+
+        BigDecimal precio;
+        int stock;
+        try {
+            precio = new BigDecimal(d.getOrDefault("precio", "").trim()).setScale(2, RoundingMode.HALF_UP);
+            stock = Integer.parseInt(d.getOrDefault("stock", "").trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("El precio y la cantidad deben ser números.");
+        }
+        if (precio.signum() < 0 || stock < 0) {
+            throw new IllegalArgumentException("El precio y la cantidad no pueden ser negativos.");
+        }
+        if (precio.compareTo(new BigDecimal("99999999.99")) > 0) {
+            throw new IllegalArgumentException("El precio es demasiado alto.");
+        }
+        return new Producto(nombre, codigo, categoria, precio, stock);
+    }
+
+    // Devuelve la lista como JSON: [{"id":1,"nombre":"...",...}, ...]
+    static String listarProductos() throws SQLException {
+        String sql = "SELECT id_producto, nombre, codigo, categoria, precio, stock FROM productos ORDER BY nombre";
+        StringBuilder json = new StringBuilder("[");
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                if (json.length() > 1) {
+                    json.append(",");
+                }
+                json.append("{\"id\":").append(rs.getInt("id_producto"))
+                    .append(",\"nombre\":\"").append(escaparJson(rs.getString("nombre")))
+                    .append("\",\"codigo\":\"").append(escaparJson(rs.getString("codigo")))
+                    .append("\",\"categoria\":\"").append(escaparJson(rs.getString("categoria")))
+                    .append("\",\"precio\":").append(rs.getBigDecimal("precio").toPlainString())
+                    .append(",\"stock\":").append(rs.getInt("stock"))
+                    .append("}");
+            }
+        }
+        return json.append("]").toString();
+    }
+
+    static void insertarProducto(Producto p) throws SQLException {
+        String sql = "INSERT INTO productos (nombre, codigo, categoria, precio, stock) VALUES (?, ?, ?, ?, ?)";
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, p.nombre());
+            ps.setString(2, p.codigo());
+            ps.setString(3, p.categoria());
+            ps.setBigDecimal(4, p.precio());
+            ps.setInt(5, p.stock());
+            ps.executeUpdate();
+        }
+    }
+
+    // Devuelve false si no existe un producto con ese id
+    static boolean actualizarProducto(int id, Producto p) throws SQLException {
+        String sql = "UPDATE productos SET nombre = ?, codigo = ?, categoria = ?, precio = ?, stock = ? "
+                   + "WHERE id_producto = ?";
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, p.nombre());
+            ps.setString(2, p.codigo());
+            ps.setString(3, p.categoria());
+            ps.setBigDecimal(4, p.precio());
+            ps.setInt(5, p.stock());
+            ps.setInt(6, id);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    static boolean eliminarProducto(int id) throws SQLException {
+        String sql = "DELETE FROM productos WHERE id_producto = ?";
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setInt(1, id);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    // ---------- PROVEEDORES (solo administrador) ----------
+    // Mismas operaciones que productos, en /api/proveedores
+
+    record Proveedor(String nombre, String contacto, String telefono, String direccion) {}
+
+    static void proveedores(HttpExchange ex) throws IOException {
+        if (!esAdministrador(ex)) {
+            enviar(ex, 401, TEXTO, "Sesión no válida. Iniciá sesión de nuevo.");
+            return;
+        }
+        try {
+            String metodo = ex.getRequestMethod();
+            Integer id = idDeLaRuta(ex);
+
+            if ("GET".equals(metodo) && id == null) {
+                enviar(ex, 200, JSON, listarProveedores());
+            } else if ("POST".equals(metodo) && id == null) {
+                insertarProveedor(leerProveedor(leerFormulario(ex)));
+                enviar(ex, 201, TEXTO, "Proveedor guardado.");
+            } else if ("PUT".equals(metodo) && id != null) {
+                if (actualizarProveedor(id, leerProveedor(leerFormulario(ex)))) {
+                    enviar(ex, 200, TEXTO, "Proveedor actualizado.");
+                } else {
+                    enviar(ex, 404, TEXTO, "El proveedor ya no existe.");
+                }
+            } else if ("DELETE".equals(metodo) && id != null) {
+                if (eliminarProveedor(id)) {
+                    enviar(ex, 200, TEXTO, "Proveedor eliminado.");
+                } else {
+                    enviar(ex, 404, TEXTO, "El proveedor ya no existe.");
+                }
+            } else {
+                enviar(ex, 405, TEXTO, "Operación no permitida.");
+            }
+
+        } catch (IllegalArgumentException e) {
+            enviar(ex, 400, TEXTO, e.getMessage());
+        } catch (SQLException e) {
+            e.printStackTrace();
+            enviar(ex, 500, TEXTO, "Error de conexión con la base de datos.");
+        }
+    }
+
+    static Proveedor leerProveedor(Map<String, String> d) {
+        return new Proveedor(campo(d, "nombre", "el nombre", 100),
+                             campo(d, "contacto", "el contacto", 100),
+                             campo(d, "telefono", "el teléfono", 30),
+                             campo(d, "direccion", "la dirección", 150));
+    }
+
+    static String listarProveedores() throws SQLException {
+        String sql = "SELECT id_proveedor, nombre, contacto, telefono, direccion FROM proveedores ORDER BY nombre";
+        StringBuilder json = new StringBuilder("[");
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                if (json.length() > 1) {
+                    json.append(",");
+                }
+                json.append("{\"id\":").append(rs.getInt("id_proveedor"))
+                    .append(",\"nombre\":\"").append(escaparJson(rs.getString("nombre")))
+                    .append("\",\"contacto\":\"").append(escaparJson(rs.getString("contacto")))
+                    .append("\",\"telefono\":\"").append(escaparJson(rs.getString("telefono")))
+                    .append("\",\"direccion\":\"").append(escaparJson(rs.getString("direccion")))
+                    .append("\"}");
+            }
+        }
+        return json.append("]").toString();
+    }
+
+    static void insertarProveedor(Proveedor v) throws SQLException {
+        String sql = "INSERT INTO proveedores (nombre, contacto, telefono, direccion) VALUES (?, ?, ?, ?)";
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, v.nombre());
+            ps.setString(2, v.contacto());
+            ps.setString(3, v.telefono());
+            ps.setString(4, v.direccion());
+            ps.executeUpdate();
+        }
+    }
+
+    static boolean actualizarProveedor(int id, Proveedor v) throws SQLException {
+        String sql = "UPDATE proveedores SET nombre = ?, contacto = ?, telefono = ?, direccion = ? "
+                   + "WHERE id_proveedor = ?";
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, v.nombre());
+            ps.setString(2, v.contacto());
+            ps.setString(3, v.telefono());
+            ps.setString(4, v.direccion());
+            ps.setInt(5, id);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    static boolean eliminarProveedor(int id) throws SQLException {
+        String sql = "DELETE FROM proveedores WHERE id_proveedor = ?";
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setInt(1, id);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
     // ---------- Códigos de verificación (se guardan en memoria) ----------
 
     static final SecureRandom ALEATORIO = new SecureRandom();
@@ -425,7 +732,8 @@ public class Servidor {
     }
 
     static String escaparJson(String texto) {
-        return texto.replace("\\", "\\\\").replace("\"", "\\\"");
+        return texto.replace("\\", "\\\\").replace("\"", "\\\"")
+                    .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
     }
 
     // ---------- Envío de correo (SMTP de Gmail, sin librerías externas) ----------

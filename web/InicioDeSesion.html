@@ -212,6 +212,7 @@
         sessionStorage.removeItem("loginEmail");
         sessionStorage.setItem("nombre", usuario.nombre);
         sessionStorage.setItem("rol", usuario.rol);
+        sessionStorage.setItem("token", usuario.token);
 
         // La página la decide el servidor (Administrador -> admin.html, Cliente -> cliente.html)
         window.location.href = usuario.pagina;
