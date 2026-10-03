@@ -11,8 +11,8 @@
     body { background: #f4f9f8; }
     .barra { background: var(--turquesa); border-bottom: 4px solid var(--verde); }
     .barra .logo { height: 56px; width: 56px; border-radius: 8px; }
-    .btn-menu { background: #fff; color: var(--turquesa-oscuro); font-weight: 600; border: 0; }
-    .btn-menu:hover, .btn-menu:focus { background: #e6fbf8; color: var(--turquesa-oscuro); }
+    .btn-usuario { background: none; border: 0; padding: 0; color: #fff; line-height: 1; }
+    .btn-usuario:hover, .btn-usuario:focus { color: var(--verde); }
     .dropdown-item.active { background: var(--turquesa); }
     .btn-principal { background: var(--turquesa); border-color: var(--turquesa); color: #fff; }
     .btn-principal:hover { background: var(--turquesa-oscuro); border-color: var(--turquesa-oscuro); color: #fff; }
@@ -27,23 +27,21 @@
 <body>
   <!-- Barra superior: logo, menú y usuario -->
   <header class="barra py-2">
-    <div class="container d-flex align-items-center gap-3">
+    <div class="container d-flex align-items-center">
       <a href="Administrador.html"><img src="imagenes/panaleraIcono.jpg" alt="La Placita - Pañalera" class="logo"></a>
- 
-      <div class="dropdown">
-        <button class="btn btn-menu dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Menú</button>
-        <ul class="dropdown-menu" id="menu">
-          <li><button class="dropdown-item active" data-seccion="inicio">Inicio</button></li>
-          <li><button class="dropdown-item" data-seccion="productos">Productos</button></li>
-          <li><button class="dropdown-item" data-seccion="proveedores">Proveedores</button></li>
-        </ul>
-      </div>
- 
+
       <div class="dropdown ms-auto">
-        <button class="btn btn-menu dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-          <span id="nombreUsuario">Administrador</span>
+        <button class="btn-usuario" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Usuario">
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <circle cx="12" cy="10" r="3.2"/>
+            <path d="M5.8 18.5C7.2 16 9.4 15 12 15s4.8 1 6.2 3.5"/>
+          </svg>
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
+          <li><span class="dropdown-item-text fw-semibold" id="nombreUsuario">Administrador</span></li>
+          <li><hr class="dropdown-divider"></li>
           <li><button class="dropdown-item" id="btnSalir">Cerrar sesión</button></li>
         </ul>
       </div>
@@ -51,6 +49,15 @@
   </header>
  
   <main class="container py-4">
+
+    <div class="dropdown mb-3">
+      <button class="btn btn-principal dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Menú</button>
+      <ul class="dropdown-menu" id="menu">
+        <li><button class="dropdown-item active" data-seccion="inicio">Inicio</button></li>
+        <li><button class="dropdown-item" data-seccion="productos">Productos</button></li>
+        <li><button class="dropdown-item" data-seccion="proveedores">Proveedores</button></li>
+      </ul>
+    </div>
  
     <!-- INICIO: panel de control -->
     <section id="inicio">
