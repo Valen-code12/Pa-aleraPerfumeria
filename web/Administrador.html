@@ -61,28 +61,6 @@
  
     <!-- INICIO: panel de control -->
     <section id="inicio">
-      <h2 class="h4 mb-3">Panel de control</h2>
-      <div class="row g-3 mb-4">
-        <div class="col-12 col-md-4">
-          <div class="card tarjeta-dato shadow-sm"><div class="card-body">
-            <div class="text-muted">Total de productos</div>
-            <div class="numero" id="totalProductos">0</div>
-          </div></div>
-        </div>
-        <div class="col-12 col-md-4">
-          <div class="card tarjeta-dato alerta shadow-sm"><div class="card-body">
-            <div class="text-muted">Productos con stock bajo</div>
-            <div class="numero" id="stockBajo">0</div>
-          </div></div>
-        </div>
-        <div class="col-12 col-md-4">
-          <div class="card tarjeta-dato peligro shadow-sm"><div class="card-body">
-            <div class="text-muted">Productos sin stock</div>
-            <div class="numero" id="sinStock">0</div>
-          </div></div>
-        </div>
-      </div>
- 
       <div class="foto-local d-flex align-items-center justify-content-center text-muted mb-4">
         Fotos del local
       </div>
@@ -205,10 +183,6 @@
         return `<tr><td>${esc(p.nombre)}</td><td>${esc(p.codigo)}</td><td>${esc(p.categoria)}</td>
                 <td class="${clase}">${p.stock}</td><td>$${p.precio.toFixed(2)}</td><td>${botonesEdicion(i, "Producto")}</td></tr>`;
       }).join("") : filaVacia(6, "No hay productos para mostrar. Tocá + Nuevo producto para cargar el primero.");
- 
-      $("totalProductos").textContent = productos.length;
-      $("sinStock").textContent = productos.filter((p) => p.stock === 0).length;
-      $("stockBajo").textContent = productos.filter((p) => p.stock > 0 && p.stock <= STOCK_BAJO).length;
     }
  
     function dibujarProveedores() {
