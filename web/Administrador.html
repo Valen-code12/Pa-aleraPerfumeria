@@ -73,9 +73,9 @@
           <button type="button" data-bs-target="#carruselLocal" data-bs-slide-to="2" aria-label="Foto 3"></button>
         </div>
         <div class="carousel-inner">
-          <div class="carousel-item active"><img src="imagenes/localfoto1.jpg" class="d-block w-100" alt="Frente de la Pañalera La Placita"></div>
-          <div class="carousel-item"><img src="imagenes/localfoto2.jpg" class="d-block w-100" alt="Pañales en el local"></div>
-          <div class="carousel-item"><img src="imagenes/localfoto3.jpg" class="d-block w-100" alt="Cartel y productos del local"></div>
+          <div class="carousel-item active"><img src="imagenes/local1.jpg" class="d-block w-100" alt="Frente de la Pañalera La Placita"></div>
+          <div class="carousel-item"><img src="imagenes/local2.jpg" class="d-block w-100" alt="Cartel y productos del local"></div>
+          <div class="carousel-item"><img src="imagenes/local3.jpg" class="d-block w-100" alt="Pañales en el local"></div>
         </div>
         <button class="carousel-control-prev" type="button" data-bs-target="#carruselLocal" data-bs-slide="prev">
           <span class="carousel-control-prev-icon" aria-hidden="true"></span><span class="visually-hidden">Anterior</span>
@@ -99,23 +99,13 @@
       </div>
       <div class="table-responsive bg-white shadow-sm rounded">
         <table class="table align-middle mb-0">
-          <thead><tr><th>Producto</th><th>Código</th><th>Categoría</th><th>Stock</th><th>Precio</th><th>Edición</th></tr></thead>
+          <thead><tr><th>Producto</th><th>Código</th><th>Categoría</th><th>Stock</th><th>Precio</th><th>Documento PDF</th><th>Edición</th></tr></thead>
           <tbody id="tablaProductos"></tbody>
         </table>
       </div>
 
-      <!-- PDFs (lista de precios, catálogo, facturas, etc.) -->
-      <div class="card tarjeta-dato shadow-sm mt-4">
-        <div class="card-body">
-          <h6 class="mb-3">Documentos PDF</h6>
-          <form id="formPdf" class="d-flex flex-wrap gap-2 mb-2">
-            <input type="file" class="form-control w-auto flex-grow-1" id="archivoPdf" accept="application/pdf,.pdf" required>
-            <button type="submit" class="btn btn-principal">Subir PDF</button>
-          </form>
-          <div class="form-text mb-3">Solo archivos PDF, hasta 10 MB.</div>
-          <ul class="list-group" id="listaPdfs"></ul>
-        </div>
-      </div>
+      <!-- Selector oculto: lo abre el botón "+" de cada producto -->
+      <input type="file" id="archivoPdf" accept="application/pdf,.pdf" class="d-none">
     </section>
  
     <!-- PROVEEDORES -->
@@ -245,8 +235,8 @@
       $("tablaProductos").innerHTML = filas.length ? filas.map(({ p, i }) => {
         const clase = p.stock === 0 ? "text-danger fw-bold" : p.stock <= STOCK_BAJO ? "text-warning fw-bold" : "";
         return `<tr><td>${esc(p.nombre)}</td><td>${esc(p.codigo)}</td><td>${esc(p.categoria)}</td>
-                <td class="${clase}">${p.stock}</td><td>$${p.precio.toFixed(2)}</td><td>${botonesEdicion(i, "Producto")}</td></tr>`;
-      }).join("") : filaVacia(6, "No hay productos para mostrar. Tocá + Nuevo producto para cargar el primero.");
+                <td class="${clase}">${p.stock}</td><td>$${p.precio.toFixed(2)}</td><td>${celdaPdf(p.id)}</td><td>${botonesEdicion(i, "Producto")}</td></tr>`;
+      }).join("") : filaVacia(7, "No hay productos para mostrar. Tocá + Nuevo producto para cargar el primero.");
     }
  
     function dibujarProveedores() {
@@ -331,33 +321,48 @@
     });
  
 
-    // ----- PDFs -----
+    // ----- PDF de cada producto -----
     const MAX_PDF_MB = 10;
-    let pdfs = [];
+    let pdfsDe = new Set();   // ids de los productos que ya tienen PDF
+    let productoPdf = null;   // producto al que se le está subiendo un PDF
 
-    function tamano(bytes) {
-      return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB";
-    }
     async function cargarPdfs() {
-      try { pdfs = JSON.parse(await api("/api/pdfs")); } catch (err) { alert(err.message); }
-      dibujarPdfs();
+      try { pdfsDe = new Set(JSON.parse(await api("/api/pdfs"))); } catch (err) { alert(err.message); }
+      dibujarProductos();
     }
-    function dibujarPdfs() {
-      $("listaPdfs").innerHTML = pdfs.length ? pdfs.map((f, i) =>
-        `<li class="list-group-item d-flex justify-content-between align-items-center gap-2">
-           <span class="text-truncate">📄 ${esc(f.nombre)} <small class="text-muted">(${tamano(f.tamano)})</small></span>
-           <span class="text-nowrap">
-             <button class="btn btn-sm btn-outline-secondary me-1" onclick="verPdf(${i})">Ver</button>
-             <button class="btn btn-sm btn-outline-danger" onclick="eliminarPdf(${i})">Eliminar</button>
-           </span></li>`).join("")
-        : `<li class="list-group-item text-center text-muted py-3">Todavía no subiste ningún PDF.</li>`;
+    // Sin PDF: botón "+". Con PDF: "Ver" y "✕" para quitarlo
+    function celdaPdf(id) {
+      return pdfsDe.has(id)
+        ? `<button class="btn btn-sm btn-outline-secondary me-1" onclick="verPdf(${id})">Ver</button>
+           <button class="btn btn-sm btn-outline-danger" title="Quitar PDF" onclick="eliminarPdf(${id})">✕</button>`
+        : `<button class="btn btn-sm btn-principal" title="Agregar PDF" onclick="agregarPdf(${id})">+</button>`;
     }
+    function agregarPdf(id) {
+      productoPdf = id;
+      $("archivoPdf").value = "";
+      $("archivoPdf").click();
+    }
+    $("archivoPdf").addEventListener("change", async () => {
+      const archivo = $("archivoPdf").files[0];
+      if (!archivo || productoPdf === null) return;
+      if (!/\.pdf$/i.test(archivo.name)) { alert("El archivo tiene que ser un PDF."); return; }
+      if (archivo.size > MAX_PDF_MB * 1024 * 1024) { alert("El PDF supera los " + MAX_PDF_MB + " MB."); return; }
+      try {
+        const res = await fetch("/api/pdfs/" + productoPdf, {
+          method: "POST",
+          headers: { "X-Token": sessionStorage.getItem("token") || "", "Content-Type": "application/pdf" },
+          body: archivo
+        });
+        const texto = await res.text();
+        if (!res.ok) throw new Error(texto);
+        await cargarPdfs();
+      } catch (err) { alert(err.message); }
+    });
     // El PDF se pide con el token y se abre en una pestaña nueva
-    async function verPdf(i) {
+    async function verPdf(id) {
       const ventana = window.open("", "_blank");
       try {
-        const res = await fetch("/api/pdfs/" + encodeURIComponent(pdfs[i].nombre),
-                                { headers: { "X-Token": sessionStorage.getItem("token") || "" } });
+        const res = await fetch("/api/pdfs/" + id, { headers: { "X-Token": sessionStorage.getItem("token") || "" } });
         if (!res.ok) throw new Error(await res.text());
         ventana.location = URL.createObjectURL(await res.blob());
       } catch (err) {
@@ -365,33 +370,14 @@
         alert(err.message);
       }
     }
-    async function eliminarPdf(i) {
-      if (!confirm("¿Eliminar \"" + pdfs[i].nombre + "\"?")) return;
+    async function eliminarPdf(id) {
+      const prod = productos.find((x) => x.id === id);
+      if (!confirm("¿Quitar el PDF de \"" + (prod ? prod.nombre : "este producto") + "\"?")) return;
       try {
-        await api("/api/pdfs/" + encodeURIComponent(pdfs[i].nombre), "DELETE");
+        await api("/api/pdfs/" + id, "DELETE");
         await cargarPdfs();
       } catch (err) { alert(err.message); }
     }
-    $("formPdf").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const archivo = $("archivoPdf").files[0];
-      if (!archivo) return;
-      if (!/\.pdf$/i.test(archivo.name)) { alert("El archivo tiene que ser un PDF."); return; }
-      if (archivo.size > MAX_PDF_MB * 1024 * 1024) { alert("El PDF supera los " + MAX_PDF_MB + " MB."); return; }
-      try {
-        const res = await fetch("/api/pdfs", {
-          method: "POST",
-          headers: { "X-Token": sessionStorage.getItem("token") || "",
-                     "X-Nombre": encodeURIComponent(archivo.name),
-                     "Content-Type": "application/pdf" },
-          body: archivo
-        });
-        const texto = await res.text();
-        if (!res.ok) throw new Error(texto);
-        $("formPdf").reset();
-        await cargarPdfs();
-      } catch (err) { alert(err.message); }
-    });
 
     cargarProductos();
     cargarProveedores();

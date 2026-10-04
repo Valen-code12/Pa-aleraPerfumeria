@@ -25,9 +25,11 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.stream.Stream;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import javax.net.ssl.SSLSocket;
@@ -62,6 +64,7 @@ public class Servidor {
         servidor.createContext("/recuperar/confirmar", Servidor::confirmarRecuperacion); // paso 2: código + clave nueva
         servidor.createContext("/api/productos", Servidor::productos);            // alta, baja, edición y lista (solo administrador)
         servidor.createContext("/api/proveedores", Servidor::proveedores);        // alta, baja, edición y lista (solo administrador)
+        servidor.createContext("/api/pdfs", Servidor::pdfs);                      // subir, ver, listar y borrar PDFs (solo administrador)
 
         // Varios hilos: mientras se envía un mail no se bloquea a los demás usuarios
         servidor.setExecutor(Executors.newCachedThreadPool());
@@ -365,6 +368,7 @@ public class Servidor {
                 }
             } else if ("DELETE".equals(metodo) && id != null) {
                 if (eliminarProducto(id)) {
+                    Files.deleteIfExists(rutaPdf(id));   // también se borra su PDF, si tenía
                     enviar(ex, 200, TEXTO, "Producto eliminado.");
                 } else {
                     enviar(ex, 404, TEXTO, "El producto ya no existe.");
@@ -588,6 +592,91 @@ public class Servidor {
             ps.setInt(1, id);
             return ps.executeUpdate() > 0;
         }
+    }
+
+    // ---------- PDF de cada producto (solo administrador) ----------
+    // Se guardan en la carpeta "pdfs" (al lado de "web", no es pública) como producto-<id>.pdf
+    //   GET    /api/pdfs      -> ids de los productos que tienen PDF, ej. [1,5,7]
+    //   GET    /api/pdfs/5    -> devuelve el PDF del producto 5
+    //   POST   /api/pdfs/5    -> sube (o reemplaza) el PDF del producto 5; el cuerpo es el PDF
+    //   DELETE /api/pdfs/5    -> elimina el PDF del producto 5
+
+    static final Path CARPETA_PDF = Paths.get("pdfs").toAbsolutePath().normalize();
+    static final int MAX_PDF_BYTES = 10 * 1024 * 1024;   // 10 MB
+
+    static Path rutaPdf(int idProducto) {
+        return CARPETA_PDF.resolve("producto-" + idProducto + ".pdf");
+    }
+
+    static void pdfs(HttpExchange ex) throws IOException {
+        if (!esAdministrador(ex)) {
+            enviar(ex, 401, TEXTO, "Sesión no válida. Iniciá sesión de nuevo.");
+            return;
+        }
+        try {
+            String metodo = ex.getRequestMethod();
+            Integer id = idDeLaRuta(ex);
+
+            if ("GET".equals(metodo) && id == null) {
+                enviar(ex, 200, JSON, listarPdfs());
+            } else if ("GET".equals(metodo)) {
+                Path archivo = rutaPdf(id);
+                if (!Files.isRegularFile(archivo)) {
+                    enviar(ex, 404, TEXTO, "Este producto no tiene PDF.");
+                } else {
+                    ex.getResponseHeaders().set("Content-Disposition", "inline");
+                    enviar(ex, 200, "application/pdf", Files.readAllBytes(archivo));
+                }
+            } else if ("POST".equals(metodo) && id != null) {
+                guardarPdf(ex, id);
+                enviar(ex, 201, TEXTO, "PDF guardado.");
+            } else if ("DELETE".equals(metodo) && id != null) {
+                if (Files.deleteIfExists(rutaPdf(id))) {
+                    enviar(ex, 200, TEXTO, "PDF eliminado.");
+                } else {
+                    enviar(ex, 404, TEXTO, "Este producto no tiene PDF.");
+                }
+            } else {
+                enviar(ex, 405, TEXTO, "Operación no permitida.");
+            }
+
+        } catch (IllegalArgumentException e) {
+            enviar(ex, 400, TEXTO, e.getMessage());
+        }
+    }
+
+    static void guardarPdf(HttpExchange ex, int idProducto) throws IOException {
+        byte[] datos = ex.getRequestBody().readNBytes(MAX_PDF_BYTES + 1);
+        if (datos.length > MAX_PDF_BYTES) {
+            throw new IllegalArgumentException("El PDF supera los 10 MB.");
+        }
+        // Todo PDF verdadero empieza con "%PDF-" (evita que suban otro tipo de archivo con extensión .pdf)
+        if (datos.length < 5 || !new String(datos, 0, 5, StandardCharsets.ISO_8859_1).equals("%PDF-")) {
+            throw new IllegalArgumentException("El archivo no es un PDF válido.");
+        }
+        Files.createDirectories(CARPETA_PDF);
+        Files.write(rutaPdf(idProducto), datos);   // si ya había uno, lo reemplaza
+    }
+
+    // Devuelve los ids de los productos con PDF: [1,5,7]
+    static String listarPdfs() throws IOException {
+        StringBuilder json = new StringBuilder("[");
+        if (Files.isDirectory(CARPETA_PDF)) {
+            List<Path> archivos;
+            try (Stream<Path> flujo = Files.list(CARPETA_PDF)) {
+                archivos = flujo.toList();
+            }
+            for (Path f : archivos) {
+                String nombre = f.getFileName().toString();
+                if (nombre.matches("producto-\\d+\\.pdf")) {
+                    if (json.length() > 1) {
+                        json.append(",");
+                    }
+                    json.append(nombre, "producto-".length(), nombre.length() - ".pdf".length());
+                }
+            }
+        }
+        return json.append("]").toString();
     }
 
     // ---------- Códigos de verificación (se guardan en memoria) ----------
