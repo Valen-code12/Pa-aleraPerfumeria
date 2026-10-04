@@ -3,6 +3,9 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipEntry;
+import java.io.ByteArrayInputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.OutputStream;
@@ -64,7 +67,7 @@ public class Servidor {
         servidor.createContext("/recuperar/confirmar", Servidor::confirmarRecuperacion); // paso 2: código + clave nueva
         servidor.createContext("/api/productos", Servidor::productos);            // alta, baja, edición y lista (solo administrador)
         servidor.createContext("/api/proveedores", Servidor::proveedores);        // alta, baja, edición y lista (solo administrador)
-        servidor.createContext("/api/pdfs", Servidor::pdfs);                      // subir, ver, listar y borrar PDFs (solo administrador)
+        servidor.createContext("/api/documentos", Servidor::documentos);          // PDF o Excel de cada producto (solo administrador)
 
         // Varios hilos: mientras se envía un mail no se bloquea a los demás usuarios
         servidor.setExecutor(Executors.newCachedThreadPool());
@@ -368,7 +371,7 @@ public class Servidor {
                 }
             } else if ("DELETE".equals(metodo) && id != null) {
                 if (eliminarProducto(id)) {
-                    Files.deleteIfExists(rutaPdf(id));   // también se borra su PDF, si tenía
+                    borrarDocumentos(id);   // también se borra su documento (PDF o Excel), si tenía
                     enviar(ex, 200, TEXTO, "Producto eliminado.");
                 } else {
                     enviar(ex, 404, TEXTO, "El producto ya no existe.");
@@ -594,21 +597,47 @@ public class Servidor {
         }
     }
 
-    // ---------- PDF de cada producto (solo administrador) ----------
-    // Se guardan en la carpeta "pdfs" (al lado de "web", no es pública) como producto-<id>.pdf
-    //   GET    /api/pdfs      -> ids de los productos que tienen PDF, ej. [1,5,7]
-    //   GET    /api/pdfs/5    -> devuelve el PDF del producto 5
-    //   POST   /api/pdfs/5    -> sube (o reemplaza) el PDF del producto 5; el cuerpo es el PDF
-    //   DELETE /api/pdfs/5    -> elimina el PDF del producto 5
+    // ---------- Documento de cada producto: PDF o Excel (solo administrador) ----------
+    // Se guardan en la carpeta "documentos" (al lado de "web", no es pública) como producto-<id>.pdf / .xlsx / .xls
+    // Cada producto tiene como máximo un documento.
+    //   GET    /api/documentos      -> lista: [{"id":1,"tipo":"pdf"},{"id":5,"tipo":"xlsx"}]
+    //   GET    /api/documentos/5    -> devuelve el documento del producto 5
+    //   POST   /api/documentos/5    -> sube (o reemplaza) el documento; el cuerpo es el archivo y X-Nombre su nombre
+    //   DELETE /api/documentos/5    -> elimina el documento del producto 5
 
-    static final Path CARPETA_PDF = Paths.get("pdfs").toAbsolutePath().normalize();
-    static final int MAX_PDF_BYTES = 10 * 1024 * 1024;   // 10 MB
+    static final Path CARPETA_DOC = Paths.get("documentos").toAbsolutePath().normalize();
+    static final int MAX_DOC_BYTES = 10 * 1024 * 1024;   // 10 MB
+    static final String[] TIPOS_DOC = {"pdf", "xlsx", "xls"};
 
-    static Path rutaPdf(int idProducto) {
-        return CARPETA_PDF.resolve("producto-" + idProducto + ".pdf");
+    static Path rutaDocumento(int idProducto, String tipo) {
+        return CARPETA_DOC.resolve("producto-" + idProducto + "." + tipo);
     }
 
-    static void pdfs(HttpExchange ex) throws IOException {
+    // Devuelve "pdf", "xlsx" o "xls" según lo que tenga el producto, o null si no tiene nada
+    static String tipoDocumento(int idProducto) {
+        for (String tipo : TIPOS_DOC) {
+            if (Files.isRegularFile(rutaDocumento(idProducto, tipo))) {
+                return tipo;
+            }
+        }
+        return null;
+    }
+
+    static void borrarDocumentos(int idProducto) throws IOException {
+        for (String tipo : TIPOS_DOC) {
+            Files.deleteIfExists(rutaDocumento(idProducto, tipo));
+        }
+    }
+
+    static String tipoMime(String tipo) {
+        switch (tipo) {
+            case "pdf":  return "application/pdf";
+            case "xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            default:     return "application/vnd.ms-excel";
+        }
+    }
+
+    static void documentos(HttpExchange ex) throws IOException {
         if (!esAdministrador(ex)) {
             enviar(ex, 401, TEXTO, "Sesión no válida. Iniciá sesión de nuevo.");
             return;
@@ -618,23 +647,25 @@ public class Servidor {
             Integer id = idDeLaRuta(ex);
 
             if ("GET".equals(metodo) && id == null) {
-                enviar(ex, 200, JSON, listarPdfs());
+                enviar(ex, 200, JSON, listarDocumentos());
             } else if ("GET".equals(metodo)) {
-                Path archivo = rutaPdf(id);
-                if (!Files.isRegularFile(archivo)) {
-                    enviar(ex, 404, TEXTO, "Este producto no tiene PDF.");
+                String tipo = tipoDocumento(id);
+                if (tipo == null) {
+                    enviar(ex, 404, TEXTO, "Este producto no tiene documento.");
                 } else {
-                    ex.getResponseHeaders().set("Content-Disposition", "inline");
-                    enviar(ex, 200, "application/pdf", Files.readAllBytes(archivo));
+                    String modo = "pdf".equals(tipo) ? "inline" : "attachment";
+                    ex.getResponseHeaders().set("Content-Disposition", modo + "; filename=\"producto-" + id + "." + tipo + "\"");
+                    enviar(ex, 200, tipoMime(tipo), Files.readAllBytes(rutaDocumento(id, tipo)));
                 }
             } else if ("POST".equals(metodo) && id != null) {
-                guardarPdf(ex, id);
-                enviar(ex, 201, TEXTO, "PDF guardado.");
+                guardarDocumento(ex, id);
+                enviar(ex, 201, TEXTO, "Documento guardado.");
             } else if ("DELETE".equals(metodo) && id != null) {
-                if (Files.deleteIfExists(rutaPdf(id))) {
-                    enviar(ex, 200, TEXTO, "PDF eliminado.");
+                if (tipoDocumento(id) == null) {
+                    enviar(ex, 404, TEXTO, "Este producto no tiene documento.");
                 } else {
-                    enviar(ex, 404, TEXTO, "Este producto no tiene PDF.");
+                    borrarDocumentos(id);
+                    enviar(ex, 200, TEXTO, "Documento eliminado.");
                 }
             } else {
                 enviar(ex, 405, TEXTO, "Operación no permitida.");
@@ -645,34 +676,69 @@ public class Servidor {
         }
     }
 
-    static void guardarPdf(HttpExchange ex, int idProducto) throws IOException {
-        byte[] datos = ex.getRequestBody().readNBytes(MAX_PDF_BYTES + 1);
-        if (datos.length > MAX_PDF_BYTES) {
-            throw new IllegalArgumentException("El PDF supera los 10 MB.");
+    static void guardarDocumento(HttpExchange ex, int idProducto) throws IOException {
+        String cabecera = ex.getRequestHeaders().getFirst("X-Nombre");
+        if (cabecera == null || cabecera.isBlank()) {
+            throw new IllegalArgumentException("Falta el nombre del archivo.");
         }
-        // Todo PDF verdadero empieza con "%PDF-" (evita que suban otro tipo de archivo con extensión .pdf)
-        if (datos.length < 5 || !new String(datos, 0, 5, StandardCharsets.ISO_8859_1).equals("%PDF-")) {
-            throw new IllegalArgumentException("El archivo no es un PDF válido.");
+        String nombre = URLDecoder.decode(cabecera, StandardCharsets.UTF_8).toLowerCase();
+        String tipo = nombre.endsWith(".pdf") ? "pdf"
+                    : nombre.endsWith(".xlsx") ? "xlsx"
+                    : nombre.endsWith(".xls") ? "xls" : null;
+        if (tipo == null) {
+            throw new IllegalArgumentException("Solo se aceptan archivos PDF o Excel (.pdf, .xlsx, .xls).");
         }
-        Files.createDirectories(CARPETA_PDF);
-        Files.write(rutaPdf(idProducto), datos);   // si ya había uno, lo reemplaza
+
+        byte[] datos = ex.getRequestBody().readNBytes(MAX_DOC_BYTES + 1);
+        if (datos.length > MAX_DOC_BYTES) {
+            throw new IllegalArgumentException("El archivo supera los 10 MB.");
+        }
+        if (!contenidoValido(tipo, datos)) {
+            throw new IllegalArgumentException("El archivo no es un " + ("pdf".equals(tipo) ? "PDF" : "Excel") + " válido.");
+        }
+
+        Files.createDirectories(CARPETA_DOC);
+        borrarDocumentos(idProducto);                          // si ya tenía uno (de cualquier tipo), se reemplaza
+        Files.write(rutaDocumento(idProducto, tipo), datos);
     }
 
-    // Devuelve los ids de los productos con PDF: [1,5,7]
-    static String listarPdfs() throws IOException {
+    // Revisa el contenido real, no solo la extensión
+    static boolean contenidoValido(String tipo, byte[] d) throws IOException {
+        switch (tipo) {
+            case "pdf":   // todo PDF empieza con "%PDF-"
+                return d.length >= 5 && new String(d, 0, 5, StandardCharsets.ISO_8859_1).equals("%PDF-");
+            case "xls":   // Excel antiguo: firma D0 CF 11 E0
+                return d.length >= 8 && (d[0] & 0xFF) == 0xD0 && (d[1] & 0xFF) == 0xCF
+                                     && (d[2] & 0xFF) == 0x11 && (d[3] & 0xFF) == 0xE0;
+            default:      // xlsx: un ZIP que adentro tenga xl/workbook.xml
+                try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(d))) {
+                    for (ZipEntry e = zip.getNextEntry(); e != null; e = zip.getNextEntry()) {
+                        if (e.getName().equals("xl/workbook.xml")) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+        }
+    }
+
+    static String listarDocumentos() throws IOException {
         StringBuilder json = new StringBuilder("[");
-        if (Files.isDirectory(CARPETA_PDF)) {
+        if (Files.isDirectory(CARPETA_DOC)) {
             List<Path> archivos;
-            try (Stream<Path> flujo = Files.list(CARPETA_PDF)) {
+            try (Stream<Path> flujo = Files.list(CARPETA_DOC)) {
                 archivos = flujo.toList();
             }
             for (Path f : archivos) {
                 String nombre = f.getFileName().toString();
-                if (nombre.matches("producto-\\d+\\.pdf")) {
+                if (nombre.matches("producto-\\d+\\.(pdf|xlsx|xls)")) {
+                    String resto = nombre.substring("producto-".length());   // "5.xlsx"
+                    int punto = resto.indexOf('.');
                     if (json.length() > 1) {
                         json.append(",");
                     }
-                    json.append(nombre, "producto-".length(), nombre.length() - ".pdf".length());
+                    json.append("{\"id\":").append(resto, 0, punto)
+                        .append(",\"tipo\":\"").append(resto.substring(punto + 1)).append("\"}");
                 }
             }
         }

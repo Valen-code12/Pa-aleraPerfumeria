@@ -99,13 +99,14 @@
       </div>
       <div class="table-responsive bg-white shadow-sm rounded">
         <table class="table align-middle mb-0">
-          <thead><tr><th>Producto</th><th>Código</th><th>Categoría</th><th>Stock</th><th>Precio</th><th>Documento PDF</th><th>Edición</th></tr></thead>
+          <thead><tr><th>Producto</th><th>Código</th><th>Categoría</th><th>Stock</th><th>Precio</th><th>Documento PDF/Excel</th><th>Edición</th></tr></thead>
           <tbody id="tablaProductos"></tbody>
         </table>
       </div>
 
-      <!-- Selector oculto: lo abre el botón "+" de cada producto -->
-      <input type="file" id="archivoPdf" accept="application/pdf,.pdf" class="d-none">
+      <!-- Selector oculto: lo abre el botón "+" de cada producto (solo PDF o Excel) -->
+      <input type="file" id="archivoDoc" class="d-none"
+             accept=".pdf,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
     </section>
  
     <!-- PROVEEDORES -->
@@ -235,7 +236,7 @@
       $("tablaProductos").innerHTML = filas.length ? filas.map(({ p, i }) => {
         const clase = p.stock === 0 ? "text-danger fw-bold" : p.stock <= STOCK_BAJO ? "text-warning fw-bold" : "";
         return `<tr><td>${esc(p.nombre)}</td><td>${esc(p.codigo)}</td><td>${esc(p.categoria)}</td>
-                <td class="${clase}">${p.stock}</td><td>$${p.precio.toFixed(2)}</td><td>${celdaPdf(p.id)}</td><td>${botonesEdicion(i, "Producto")}</td></tr>`;
+                <td class="${clase}">${p.stock}</td><td>$${p.precio.toFixed(2)}</td><td>${celdaDoc(p.id)}</td><td>${botonesEdicion(i, "Producto")}</td></tr>`;
       }).join("") : filaVacia(7, "No hay productos para mostrar. Tocá + Nuevo producto para cargar el primero.");
     }
  
@@ -321,67 +322,86 @@
     });
  
 
-    // ----- PDF de cada producto -----
-    const MAX_PDF_MB = 10;
-    let pdfsDe = new Set();   // ids de los productos que ya tienen PDF
-    let productoPdf = null;   // producto al que se le está subiendo un PDF
+    // ----- Documento (PDF o Excel) de cada producto -----
+    const MAX_DOC_MB = 10;
+    let documentos = new Map();   // id del producto -> "pdf" | "xlsx" | "xls"
+    let productoDoc = null;       // producto al que se le está subiendo un documento
 
-    async function cargarPdfs() {
-      try { pdfsDe = new Set(JSON.parse(await api("/api/pdfs"))); } catch (err) { alert(err.message); }
+    async function cargarDocumentos() {
+      try {
+        const lista = JSON.parse(await api("/api/documentos"));
+        documentos = new Map(lista.map((d) => [d.id, d.tipo]));
+      } catch (err) { alert(err.message); }
       dibujarProductos();
     }
-    // Sin PDF: botón "+". Con PDF: "Ver" y "✕" para quitarlo
-    function celdaPdf(id) {
-      return pdfsDe.has(id)
-        ? `<button class="btn btn-sm btn-outline-secondary me-1" onclick="verPdf(${id})">Ver</button>
-           <button class="btn btn-sm btn-outline-danger" title="Quitar PDF" onclick="eliminarPdf(${id})">✕</button>`
-        : `<button class="btn btn-sm btn-principal" title="Agregar PDF" onclick="agregarPdf(${id})">+</button>`;
+    // Sin documento: botón "+". Con documento: "Ver PDF" o "Descargar Excel", y "✕" para quitarlo
+    function celdaDoc(id) {
+      const tipo = documentos.get(id);
+      if (!tipo) {
+        return `<button class="btn btn-sm btn-principal" title="Agregar PDF o Excel" onclick="agregarDocumento(${id})">+</button>`;
+      }
+      const etiqueta = tipo === "pdf" ? "Ver PDF" : "Descargar Excel";
+      return `<button class="btn btn-sm btn-outline-secondary me-1" onclick="abrirDocumento(${id})">${etiqueta}</button>
+              <button class="btn btn-sm btn-outline-danger" title="Quitar documento" onclick="eliminarDocumento(${id})">✕</button>`;
     }
-    function agregarPdf(id) {
-      productoPdf = id;
-      $("archivoPdf").value = "";
-      $("archivoPdf").click();
+    function agregarDocumento(id) {
+      productoDoc = id;
+      $("archivoDoc").value = "";
+      $("archivoDoc").click();
     }
-    $("archivoPdf").addEventListener("change", async () => {
-      const archivo = $("archivoPdf").files[0];
-      if (!archivo || productoPdf === null) return;
-      if (!/\.pdf$/i.test(archivo.name)) { alert("El archivo tiene que ser un PDF."); return; }
-      if (archivo.size > MAX_PDF_MB * 1024 * 1024) { alert("El PDF supera los " + MAX_PDF_MB + " MB."); return; }
+    $("archivoDoc").addEventListener("change", async () => {
+      const archivo = $("archivoDoc").files[0];
+      if (!archivo || productoDoc === null) return;
+      if (!/\.(pdf|xlsx|xls)$/i.test(archivo.name)) { alert("Solo se aceptan archivos PDF o Excel (.pdf, .xlsx, .xls)."); return; }
+      if (archivo.size > MAX_DOC_MB * 1024 * 1024) { alert("El archivo supera los " + MAX_DOC_MB + " MB."); return; }
       try {
-        const res = await fetch("/api/pdfs/" + productoPdf, {
+        const res = await fetch("/api/documentos/" + productoDoc, {
           method: "POST",
-          headers: { "X-Token": sessionStorage.getItem("token") || "", "Content-Type": "application/pdf" },
+          headers: { "X-Token": sessionStorage.getItem("token") || "",
+                     "X-Nombre": encodeURIComponent(archivo.name),
+                     "Content-Type": "application/octet-stream" },
           body: archivo
         });
         const texto = await res.text();
         if (!res.ok) throw new Error(texto);
-        await cargarPdfs();
+        await cargarDocumentos();
       } catch (err) { alert(err.message); }
     });
-    // El PDF se pide con el token y se abre en una pestaña nueva
-    async function verPdf(id) {
-      const ventana = window.open("", "_blank");
+    // El PDF se abre en una pestaña nueva; el Excel se descarga
+    async function abrirDocumento(id) {
+      const tipo = documentos.get(id);
+      const ventana = tipo === "pdf" ? window.open("", "_blank") : null;
       try {
-        const res = await fetch("/api/pdfs/" + id, { headers: { "X-Token": sessionStorage.getItem("token") || "" } });
+        const res = await fetch("/api/documentos/" + id, { headers: { "X-Token": sessionStorage.getItem("token") || "" } });
         if (!res.ok) throw new Error(await res.text());
-        ventana.location = URL.createObjectURL(await res.blob());
+        const url = URL.createObjectURL(await res.blob());
+        if (ventana) {
+          ventana.location = url;
+        } else {
+          const prod = productos.find((x) => x.id === id);
+          const enlace = document.createElement("a");
+          enlace.href = url;
+          enlace.download = (prod ? prod.nombre : "producto-" + id).replace(/[\\\/:*?"<>|]/g, "_") + "." + tipo;
+          enlace.click();
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
       } catch (err) {
         if (ventana) ventana.close();
         alert(err.message);
       }
     }
-    async function eliminarPdf(id) {
+    async function eliminarDocumento(id) {
       const prod = productos.find((x) => x.id === id);
-      if (!confirm("¿Quitar el PDF de \"" + (prod ? prod.nombre : "este producto") + "\"?")) return;
+      if (!confirm("¿Quitar el documento de \"" + (prod ? prod.nombre : "este producto") + "\"?")) return;
       try {
-        await api("/api/pdfs/" + id, "DELETE");
-        await cargarPdfs();
+        await api("/api/documentos/" + id, "DELETE");
+        await cargarDocumentos();
       } catch (err) { alert(err.message); }
     }
 
     cargarProductos();
     cargarProveedores();
-    cargarPdfs();
+    cargarDocumentos();
   </script>
 </body>
 </html>
