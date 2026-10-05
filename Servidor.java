@@ -40,14 +40,14 @@ import javax.net.ssl.SSLSocketFactory;
 
 public class Servidor {
 
-    // Datos de conexión a MySQL (cambiar la clave por la tuya)
+    // Datos de conexión a MySQL
     static final String URL = "jdbc:mysql://localhost:3306/panalera_db";
     static final String USUARIO_BD = "root";
     static final String CLAVE_BD = "";
 
     // Cuenta de Gmail que ENVÍA los avisos (la de la pañalera)
     static final String CORREO_ORIGEN = "laplacitapm@gmail.com";
-    // Contraseña de aplicación de Google (16 letras), NO la contraseña normal del Gmail
+    // Contraseña de aplicación de Google (16 letras)
     static final String CLAVE_CORREO = "vfyv mjnf hvob nigu";
 
     // Reglas de los códigos de verificación
@@ -84,7 +84,7 @@ public class Servidor {
     // Paso 1: comprueba mail y contraseña y, si están bien, envía un código al mail
     static void iniciarSesion(HttpExchange ex) throws IOException {
         if (!"POST".equals(ex.getRequestMethod())) {
-            servirArchivo(ex); // un GET a /login.html es una página, no el formulario
+            servirArchivo(ex); // un GET a /login.html es una página
             return;
         }
 
