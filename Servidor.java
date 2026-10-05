@@ -43,7 +43,7 @@ public class Servidor {
     // Datos de conexión a MySQL
     static final String URL = "jdbc:mysql://localhost:3306/panalera_db";
     static final String USUARIO_BD = "root";
-    static final String CLAVE_BD = "";
+    static final String CLAVE_BD = "20032006VDa!";
 
     // Cuenta de Gmail que ENVÍA los avisos (la de la pañalera)
     static final String CORREO_ORIGEN = "laplacitapm@gmail.com";
