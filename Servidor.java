@@ -50,6 +50,10 @@ public class Servidor {
     // Contraseña de aplicación de Google (16 letras)
     static final String CLAVE_CORREO = "vfyv mjnf hvob nigu";
 
+    // Mientras sea true, el código de verificación también se muestra en esta consola.
+    // Ponelo en false cuando termines de probar.
+    static final boolean DEPURACION = true;
+
     // Reglas de los códigos de verificación
     static final long VIGENCIA_MS = 10 * 60 * 1000;      // el código vale 10 minutos
     static final long ESPERA_REENVIO_MS = 60 * 1000;     // hay que esperar 1 minuto para pedir otro
@@ -68,6 +72,7 @@ public class Servidor {
         servidor.createContext("/api/productos", Servidor::productos);            // alta, baja, edición y lista (solo administrador)
         servidor.createContext("/api/proveedores", Servidor::proveedores);        // alta, baja, edición y lista (solo administrador)
         servidor.createContext("/api/documentos", Servidor::documentos);          // PDF o Excel de cada producto (solo administrador)
+        servidor.createContext("/api/catalogo", Servidor::catalogo);              // lista de productos para cualquier usuario con sesión
 
         // Varios hilos: mientras se envía un mail no se bloquea a los demás usuarios
         servidor.setExecutor(Executors.newCachedThreadPool());
@@ -244,6 +249,9 @@ public class Servidor {
                 String nombre = buscarNombre(email);
                 if (nombre != null) {
                     emitirCodigo("RECUPERACION", email, nombre, null, null);
+                } else if (DEPURACION) {
+                    // Al usuario se le responde igual por seguridad, pero acá en la consola se aclara
+                    System.out.println("[DEPURACION] Recuperación: el mail " + email + " NO está registrado, no se envía nada.");
                 }
             } catch (Exception e) {
                 System.out.println("Recuperación: " + e.getMessage());
@@ -339,6 +347,27 @@ public class Servidor {
             throw new IllegalArgumentException(etiqueta + " es demasiado largo (máximo " + max + " caracteres).");
         }
         return valor;
+    }
+
+    // ---------- CATÁLOGO (cualquier usuario con sesión: cliente o administrador) ----------
+    //   GET /api/catalogo -> misma lista que /api/productos, solo lectura
+
+    static void catalogo(HttpExchange ex) throws IOException {
+        String token = ex.getRequestHeaders().getFirst("X-Token");
+        if (token == null || !sesiones.containsKey(token)) {
+            enviar(ex, 401, TEXTO, "Sesión no válida. Iniciá sesión de nuevo.");
+            return;
+        }
+        if (!"GET".equals(ex.getRequestMethod())) {
+            enviar(ex, 405, TEXTO, "Operación no permitida.");
+            return;
+        }
+        try {
+            enviar(ex, 200, JSON, listarProductos());
+        } catch (SQLException e) {
+            e.printStackTrace();
+            enviar(ex, 500, TEXTO, "Error de conexión con la base de datos.");
+        }
     }
 
     // ---------- PRODUCTOS (solo administrador) ----------
@@ -770,6 +799,7 @@ public class Servidor {
         if (correosActivados()) {
             try {
                 enviarCodigo(email, nombre, proposito, codigo);
+                System.out.println("[CORREO] Código " + proposito + " enviado a " + email);
             } catch (IOException e) {
                 System.out.println("No se pudo enviar el correo: " + e.getMessage());
                 throw new CorreoException("No se pudo enviar el correo. Intentá de nuevo en unos minutos.");
@@ -779,6 +809,9 @@ public class Servidor {
             System.out.println("[MODO PRUEBA] Código " + proposito + " para " + email + ": " + codigo);
         }
 
+        if (DEPURACION) {
+            System.out.println("[DEPURACION] Código " + proposito + " para " + email + ": " + codigo);
+        }
         codigos.put(llave, new CodigoPendiente(codigo, ahora + VIGENCIA_MS, ahora, nombre, rol, claveHash));
     }
 

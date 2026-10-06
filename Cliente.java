@@ -11,7 +11,7 @@ public class Cliente extends Persona {
     public String getTipo() { return "cliente"; }
 
     @Override
-    public String getPagina() { return "cliente.html"; }
+    public String getPagina() { return "Cliente.html"; }
 
     // Más adelante: agregarAlCarrito(), verPedidos(), etc.
 }
