@@ -160,7 +160,9 @@ public class Servidor {
         Map<String, String> datos = leerFormulario(ex);
         String nombre = datos.getOrDefault("nombre", "").trim();
         String email = datos.getOrDefault("email", "").trim().toLowerCase();
-        String rol = datos.getOrDefault("rol", "");
+        // Por seguridad el rol NO se toma de lo que manda el navegador: el registro público
+        // siempre crea CLIENTE. Los administradores se asignan desde la base de datos.
+        String rol = "CLIENTE";
         String clave = datos.getOrDefault("clave", "");
 
         try {
