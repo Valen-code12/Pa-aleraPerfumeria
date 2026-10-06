@@ -40,15 +40,31 @@ import javax.net.ssl.SSLSocketFactory;
 
 public class Servidor {
 
+    // Las contraseñas NO van en el código: se leen del archivo config.properties,
+    // que está en .gitignore y por eso no se sube a GitHub.
+    static final java.util.Properties CONFIG = cargarConfig();
+
     // Datos de conexión a MySQL
     static final String URL = "jdbc:mysql://localhost:3306/panalera_db";
-    static final String USUARIO_BD = "root";
-    static final String CLAVE_BD = "Contraseña MySQL";
+    static final String USUARIO_BD = CONFIG.getProperty("USUARIO_BD", "root");
+    static final String CLAVE_BD = CONFIG.getProperty("CLAVE_BD", "");
 
     // Cuenta de Gmail que ENVÍA los avisos (la de la pañalera)
-    static final String CORREO_ORIGEN = "mail pañalera";
+    static final String CORREO_ORIGEN = CONFIG.getProperty("CORREO_ORIGEN", "");
     // Contraseña de aplicación de Google (16 letras)
-    static final String CLAVE_CORREO = "Contraseña para que envie mail de verificacion";
+    static final String CLAVE_CORREO = CONFIG.getProperty("CLAVE_CORREO", "");
+
+    static java.util.Properties cargarConfig() {
+        java.util.Properties p = new java.util.Properties();
+        try (java.io.Reader r = new java.io.InputStreamReader(
+                new java.io.FileInputStream("config.properties"), java.nio.charset.StandardCharsets.UTF_8)) {
+            p.load(r);
+        } catch (java.io.IOException e) {
+            System.out.println("[CONFIG] No se pudo leer config.properties (" + e.getMessage() + "). "
+                    + "Copiá config.properties.example como config.properties y completalo.");
+        }
+        return p;
+    }
 
     // Mientras sea true, el código de verificación también se muestra en esta consola.
     // Ponelo en false cuando termines de probar.

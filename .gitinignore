@@ -1,0 +1,7 @@
+# Contraseñas y datos privados
+config.properties
+
+# Archivos generados
+bin/
+out/
+*.class
