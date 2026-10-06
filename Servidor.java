@@ -43,12 +43,12 @@ public class Servidor {
     // Datos de conexión a MySQL
     static final String URL = "jdbc:mysql://localhost:3306/panalera_db";
     static final String USUARIO_BD = "root";
-    static final String CLAVE_BD = "20032006VDa!";
+    static final String CLAVE_BD = "Contraseña MySQL";
 
     // Cuenta de Gmail que ENVÍA los avisos (la de la pañalera)
-    static final String CORREO_ORIGEN = "laplacitapm@gmail.com";
+    static final String CORREO_ORIGEN = "mail pañalera";
     // Contraseña de aplicación de Google (16 letras)
-    static final String CLAVE_CORREO = "vfyv mjnf hvob nigu";
+    static final String CLAVE_CORREO = "Contraseña para que envie mail de verificacion";
 
     // Mientras sea true, el código de verificación también se muestra en esta consola.
     // Ponelo en false cuando termines de probar.
