@@ -30,6 +30,13 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.util.TreeMap;
+import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
@@ -88,13 +95,14 @@ public class Servidor {
         servidor.createContext("/api/productos", Servidor::productos);            // alta, baja, edición y lista (solo administrador)
         servidor.createContext("/api/proveedores", Servidor::proveedores);        // alta, baja, edición y lista (solo administrador)
         servidor.createContext("/api/documentos", Servidor::documentos);          // PDF o Excel de cada producto (solo administrador)
+        servidor.createContext("/api/pedidos", Servidor::pedidos);                // hacer un pedido (cliente con sesión)
         servidor.createContext("/api/catalogo", Servidor::catalogo);              // lista de productos para cualquier usuario con sesión
 
         // Varios hilos: mientras se envía un mail no se bloquea a los demás usuarios
         servidor.setExecutor(Executors.newCachedThreadPool());
 
         servidor.start();
-        System.out.println("Servidor v5 iniciado. Abrí http://localhost:8080 en el navegador");
+        System.out.println("Servidor v6 iniciado. Abrí http://localhost:8080 en el navegador");
         if (!correosActivados()) {
             System.out.println("AVISO: el correo no está configurado. Los códigos se van a mostrar acá en la consola.");
         }
@@ -153,7 +161,7 @@ public class Servidor {
             String json = "{\"rol\":\"" + escaparJson(p.getRol()) + "\",\"nombre\":\""
                           + escaparJson(p.getNombre()) + "\",\"pagina\":\""
                           + escaparJson(p.getPagina()) + "\",\"token\":\""
-                          + crearSesion(p.getRol()) + "\"}";
+                          + crearSesion(p.getRol(), p.getNombre(), p.getEmail()) + "\"}";
             enviar(ex, 200, "application/json; charset=UTF-8", json);
 
         } catch (IllegalArgumentException e) {
@@ -326,11 +334,15 @@ public class Servidor {
     // token -> rol. Las rutas del administrador piden el token en el encabezado X-Token
     static final Map<String, String> sesiones = new ConcurrentHashMap<>();
 
-    static String crearSesion(String rol) {
+    // token -> {nombre, email}. Se usa para saber a quién mandarle el comprobante del pedido
+    static final Map<String, String[]> datosSesion = new ConcurrentHashMap<>();
+
+    static String crearSesion(String rol, String nombre, String email) {
         byte[] bytes = new byte[32];
         ALEATORIO.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         sesiones.put(token, rol);
+        datosSesion.put(token, new String[] { nombre, email });
         return token;
     }
 
@@ -385,6 +397,327 @@ public class Servidor {
         } catch (SQLException e) {
             e.printStackTrace();
             enviar(ex, 500, TEXTO, "Error de conexión con la base de datos.");
+        }
+    }
+
+    // ---------- PEDIDOS (cliente o administrador con sesión) ----------
+    //   GET  /api/pedidos -> datos para mostrar antes de pedir (costo del envío)
+    //   POST /api/pedidos -> registra el pedido, descuenta el stock y envía los mails
+    //
+    // En config.properties se pueden agregar (todas opcionales):
+    //   CORREO_PEDIDOS=mail donde llegan los pedidos (si no está, se usa CORREO_ORIGEN)
+    //   COSTO_ENVIO=    vacío = "se coordina con el local" | 0 = envío sin costo | 1500 = se suma al total
+    //   ALIAS_MERCADOPAGO=alias para las transferencias (se muestra en el comprobante)
+
+    static final String LOCAL_DIRECCION = "Av. Piedrabuena 4990 - Villa Lugano";
+    static final String LOCAL_TELEFONO = "4535-9379";
+    static final String LOCAL_MAIL = "laplacita.p@gmail.com";
+
+    static final String COSTO_ENVIO = CONFIG.getProperty("COSTO_ENVIO", "").trim();
+    static final String ALIAS_MERCADOPAGO = CONFIG.getProperty("ALIAS_MERCADOPAGO", "").trim();
+
+    static String correoPedidos() {
+        String c = CONFIG.getProperty("CORREO_PEDIDOS", "").trim();
+        return c.isEmpty() ? CORREO_ORIGEN : c;
+    }
+
+    // null = "a coordinar con el local"
+    static BigDecimal costoEnvio() {
+        if (COSTO_ENVIO.isEmpty()) {
+            return null;
+        }
+        try {
+            BigDecimal c = new BigDecimal(COSTO_ENVIO.replace(",", "."));
+            return c.signum() >= 0 ? c : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    record LineaPedido(String nombre, String codigo, BigDecimal precio, int cantidad) {}
+
+    // envio: null cuando es envío y el costo se coordina con el local
+    record PedidoCreado(int numero, LocalDateTime fecha, List<LineaPedido> lineas,
+                        BigDecimal subtotal, BigDecimal envio, BigDecimal total) {}
+
+    static void pedidos(HttpExchange ex) throws IOException {
+        String token = ex.getRequestHeaders().getFirst("X-Token");
+        String[] quien = token == null ? null : datosSesion.get(token);   // {nombre, email}
+        if (quien == null) {
+            enviar(ex, 401, TEXTO, "Sesión no válida. Iniciá sesión de nuevo.");
+            return;
+        }
+
+        if ("GET".equals(ex.getRequestMethod())) {
+            BigDecimal envio = costoEnvio();
+            enviar(ex, 200, JSON, "{\"costoEnvio\":" + (envio == null ? "null" : envio.toPlainString()) + "}");
+            return;
+        }
+        if (!"POST".equals(ex.getRequestMethod())) {
+            enviar(ex, 405, TEXTO, "Operación no permitida.");
+            return;
+        }
+
+        try {
+            Map<String, String> d = leerFormulario(ex);
+
+            String telefono = campo(d, "telefono", "el teléfono", 30);
+            if (!telefono.matches("[0-9+()\\- ]{6,30}")) {
+                throw new IllegalArgumentException("Ingresá un teléfono válido (solo números).");
+            }
+            String entrega = d.getOrDefault("entrega", "");
+            if (!entrega.equals("RETIRO") && !entrega.equals("ENVIO")) {
+                throw new IllegalArgumentException("Elegí si retirás en el local o querés envío.");
+            }
+            String direccion = entrega.equals("ENVIO") ? campo(d, "direccion", "la dirección de entrega", 150) : null;
+            String pago = d.getOrDefault("pago", "");
+            if (!pago.equals("TRANSFERENCIA") && !pago.equals("EFECTIVO")) {
+                throw new IllegalArgumentException("Elegí la forma de pago.");
+            }
+            String obs = d.getOrDefault("observaciones", "").trim();
+            if (obs.length() > 255) {
+                throw new IllegalArgumentException("Las observaciones son demasiado largas (máximo 255 caracteres).");
+            }
+            Map<Integer, Integer> items = leerItems(d.getOrDefault("items", ""));
+
+            // Los precios y el stock se toman SIEMPRE de la base, nunca de lo que manda el navegador
+            PedidoCreado p = guardarPedido(quien[0], quien[1], telefono, entrega, direccion, pago, obs, items);
+            boolean mailCliente = enviarMailsPedido(p, quien[0], quien[1], telefono, entrega, direccion, pago, obs);
+
+            enviar(ex, 200, JSON, "{\"numero\":\"" + String.format("%05d", p.numero())
+                + "\",\"total\":" + p.total().toPlainString()
+                + ",\"mailCliente\":" + mailCliente + "}");
+
+        } catch (IllegalArgumentException e) {
+            enviar(ex, 400, TEXTO, e.getMessage());
+        } catch (SQLException e) {
+            e.printStackTrace();
+            enviar(ex, 500, TEXTO, "Error de conexión con la base de datos.");
+        }
+    }
+
+    // "5:2,9:1" -> {5=2, 9=1}  (id del producto : cantidad)
+    static Map<Integer, Integer> leerItems(String texto) {
+        if (texto.isBlank()) {
+            throw new IllegalArgumentException("El carrito está vacío.");
+        }
+        Map<Integer, Integer> items = new TreeMap<>();   // ordenado por id: siempre se bloquea en el mismo orden
+        for (String par : texto.split(",")) {
+            String[] x = par.split(":");
+            try {
+                int id = Integer.parseInt(x[0].trim());
+                int cantidad = Integer.parseInt(x[1].trim());
+                if (cantidad < 1 || cantidad > 999) {
+                    throw new IllegalArgumentException("Hay una cantidad inválida en el carrito.");
+                }
+                items.merge(id, cantidad, Integer::sum);
+            } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+                throw new IllegalArgumentException("El carrito tiene datos inválidos.");
+            }
+        }
+        if (items.size() > 50) {
+            throw new IllegalArgumentException("El pedido tiene demasiados productos distintos (máximo 50).");
+        }
+        return items;
+    }
+
+    // Comprueba el stock, lo descuenta y guarda el pedido: todo junto o nada (transacción)
+    static PedidoCreado guardarPedido(String nombre, String email, String telefono, String entrega,
+            String direccion, String pago, String obs, Map<Integer, Integer> items) throws SQLException {
+
+        LocalDateTime ahora = LocalDateTime.now();
+        BigDecimal envio = entrega.equals("ENVIO") ? costoEnvio() : BigDecimal.ZERO;   // null = a coordinar
+
+        try (Connection con = DriverManager.getConnection(URL, USUARIO_BD, CLAVE_BD)) {
+            con.setAutoCommit(false);
+            try {
+                List<LineaPedido> lineas = new ArrayList<>();
+                List<Integer> idsProducto = new ArrayList<>();
+                BigDecimal subtotal = BigDecimal.ZERO;
+
+                for (Map.Entry<Integer, Integer> e : items.entrySet()) {
+                    String sel = "SELECT nombre, codigo, precio, stock FROM productos WHERE id_producto = ? FOR UPDATE";
+                    try (PreparedStatement ps = con.prepareStatement(sel)) {
+                        ps.setInt(1, e.getKey());
+                        try (ResultSet rs = ps.executeQuery()) {
+                            if (!rs.next()) {
+                                throw new IllegalArgumentException(
+                                    "Un producto del carrito ya no está disponible. Revisá tu carrito.");
+                            }
+                            String n = rs.getString("nombre");
+                            int stock = rs.getInt("stock");
+                            if (stock < e.getValue()) {
+                                throw new IllegalArgumentException(stock == 0
+                                    ? "\"" + n + "\" se quedó sin stock. Revisá tu carrito."
+                                    : "De \"" + n + "\" solo quedan " + stock + ". Revisá tu carrito.");
+                            }
+                            BigDecimal precio = rs.getBigDecimal("precio");
+                            lineas.add(new LineaPedido(n, rs.getString("codigo"), precio, e.getValue()));
+                            idsProducto.add(e.getKey());
+                            subtotal = subtotal.add(precio.multiply(BigDecimal.valueOf(e.getValue())));
+                        }
+                    }
+                    try (PreparedStatement ps = con.prepareStatement(
+                            "UPDATE productos SET stock = stock - ? WHERE id_producto = ?")) {
+                        ps.setInt(1, e.getValue());
+                        ps.setInt(2, e.getKey());
+                        ps.executeUpdate();
+                    }
+                }
+
+                BigDecimal total = subtotal.add(envio == null ? BigDecimal.ZERO : envio);
+
+                int numero;
+                String insPedido = "INSERT INTO pedidos (fecha, cliente_nombre, cliente_email, telefono, entrega, "
+                    + "direccion, pago, costo_envio, total, observaciones) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                try (PreparedStatement ps = con.prepareStatement(insPedido, Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setTimestamp(1, Timestamp.valueOf(ahora));
+                    ps.setString(2, nombre);
+                    ps.setString(3, email);
+                    ps.setString(4, telefono);
+                    ps.setString(5, entrega);
+                    ps.setString(6, direccion);
+                    ps.setString(7, pago);
+                    ps.setBigDecimal(8, envio == null ? BigDecimal.ZERO : envio);
+                    ps.setBigDecimal(9, total);
+                    ps.setString(10, obs.isEmpty() ? null : obs);
+                    ps.executeUpdate();
+                    try (ResultSet claves = ps.getGeneratedKeys()) {
+                        claves.next();
+                        numero = claves.getInt(1);
+                    }
+                }
+
+                String insItem = "INSERT INTO pedido_items (id_pedido, id_producto, nombre, codigo, precio, cantidad) "
+                    + "VALUES (?, ?, ?, ?, ?, ?)";
+                try (PreparedStatement ps = con.prepareStatement(insItem)) {
+                    for (int i = 0; i < lineas.size(); i++) {
+                        LineaPedido l = lineas.get(i);
+                        ps.setInt(1, numero);
+                        ps.setInt(2, idsProducto.get(i));
+                        ps.setString(3, l.nombre());
+                        ps.setString(4, l.codigo());
+                        ps.setBigDecimal(5, l.precio());
+                        ps.setInt(6, l.cantidad());
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                }
+
+                con.commit();
+                return new PedidoCreado(numero, ahora, lineas, subtotal, envio, total);
+
+            } catch (SQLException | RuntimeException e) {
+                con.rollback();
+                throw e;
+            }
+        }
+    }
+
+    // ---------- Mails del pedido ----------
+
+    static String pesos(BigDecimal n) {
+        return String.format(Locale.forLanguageTag("es-AR"), "$%,.2f", n);
+    }
+
+    static String detallePedido(PedidoCreado p, String entrega) {
+        StringBuilder t = new StringBuilder("DETALLE\r\n");
+        for (LineaPedido l : p.lineas()) {
+            t.append(l.nombre()).append(" (").append(l.codigo()).append(")\r\n")
+             .append("   ").append(l.cantidad()).append(" x ").append(pesos(l.precio()))
+             .append("  =  ").append(pesos(l.precio().multiply(BigDecimal.valueOf(l.cantidad())))).append("\r\n");
+        }
+        t.append("------------------------------------------\r\n")
+         .append("Subtotal: ").append(pesos(p.subtotal())).append("\r\n");
+        if (entrega.equals("ENVIO")) {
+            t.append("Envío: ").append(p.envio() == null ? "a coordinar con el local (no incluido en el total)"
+                                   : p.envio().signum() == 0 ? "sin costo" : pesos(p.envio())).append("\r\n");
+        } else {
+            t.append("Envío: retiro en el local (sin costo)\r\n");
+        }
+        t.append("TOTAL: ").append(pesos(p.total())).append("\r\n")
+         .append("------------------------------------------\r\n");
+        return t.toString();
+    }
+
+    static String textoEntrega(PedidoCreado p, String entrega, String direccion) {
+        if (entrega.equals("ENVIO")) {
+            return "Envío a domicilio: " + direccion + ".\r\n"
+                 + (p.envio() == null ? "El costo del envío se coordina con el local.\r\n" : "");
+        }
+        return "Retiro en el local: " + LOCAL_DIRECCION + ".\r\n";
+    }
+
+    static String textoPago(String pago, String entrega) {
+        if (pago.equals("TRANSFERENCIA")) {
+            return "Transferencia (Mercado Pago).\r\n"
+                 + (ALIAS_MERCADOPAGO.isEmpty()
+                        ? "Pedinos el alias para transferir por teléfono (" + LOCAL_TELEFONO + ") o por mail (" + LOCAL_MAIL + ").\r\n"
+                        : "Alias: " + ALIAS_MERCADOPAGO + "\r\n")
+                 + "Cuando transfieras, enviá el comprobante de la transferencia a " + LOCAL_MAIL
+                 + " o al " + LOCAL_TELEFONO + ".\r\n";
+        }
+        return "Efectivo: abonás " + (entrega.equals("ENVIO") ? "al recibir el pedido." : "al retirar el pedido en el local.") + "\r\n";
+    }
+
+    // Envía el aviso al local y el comprobante al cliente.
+    // Devuelve true si el comprobante salió (o si está en modo prueba y quedó en la consola).
+    static boolean enviarMailsPedido(PedidoCreado p, String nombre, String email, String telefono,
+            String entrega, String direccion, String pago, String obs) {
+
+        String numero = String.format("%05d", p.numero());
+        String fecha = p.fecha().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
+        String detalle = detallePedido(p, entrega);
+
+        String paraElLocal = "NUEVO PEDIDO N° " + numero + "\r\n"
+            + "Fecha: " + fecha + "\r\n\r\n"
+            + "CLIENTE\r\n"
+            + "Nombre: " + nombre + "\r\n"
+            + "Mail: " + email + "\r\n"
+            + "Teléfono: " + telefono + "\r\n\r\n"
+            + detalle + "\r\n"
+            + "ENTREGA\r\n" + textoEntrega(p, entrega, direccion) + "\r\n"
+            + "FORMA DE PAGO\r\n" + (pago.equals("TRANSFERENCIA") ? "Transferencia (Mercado Pago)\r\n" : "Efectivo\r\n")
+            + (obs.isEmpty() ? "" : "\r\nOBSERVACIONES DEL CLIENTE\r\n" + obs + "\r\n")
+            + "\r\nEl stock de los productos ya fue descontado.\r\n";
+
+        String paraElCliente = "Hola " + nombre + ",\r\n\r\n"
+            + "Recibimos tu pedido. Guardá este comprobante.\r\n\r\n"
+            + "PAÑALERA Y PERFUMERÍA \"LA PLACITA\"\r\n"
+            + LOCAL_DIRECCION + "\r\n"
+            + "Tel. " + LOCAL_TELEFONO + " | " + LOCAL_MAIL + "\r\n\r\n"
+            + "COMPROBANTE DE PEDIDO N° " + numero + "\r\n"
+            + "Fecha: " + fecha + "\r\n"
+            + "Cliente: " + nombre + "\r\n"
+            + "Teléfono: " + telefono + "\r\n\r\n"
+            + detalle + "\r\n"
+            + "ENTREGA\r\n" + textoEntrega(p, entrega, direccion) + "\r\n"
+            + "FORMA DE PAGO\r\n" + textoPago(pago, entrega) + "\r\n"
+            + "IMPORTANTE: el pedido se puede abonar por transferencia (Mercado Pago) o en efectivo.\r\n\r\n"
+            + "Este comprobante no es una factura.\r\n";
+
+        String asuntoLocal = "Nuevo pedido N° " + numero + " - " + nombre + " - " + pesos(p.total());
+        String asuntoCliente = "Tu pedido N° " + numero + " en Pañalera La Placita";
+
+        if (!correosActivados()) {
+            System.out.println("[MODO PRUEBA] Mail al local (" + correoPedidos() + "):\r\n" + paraElLocal);
+            System.out.println("[MODO PRUEBA] Mail al cliente (" + email + "):\r\n" + paraElCliente);
+            return true;
+        }
+
+        try {
+            enviarCorreo(correoPedidos(), asuntoLocal, paraElLocal);
+            System.out.println("[CORREO] Pedido " + numero + " enviado al local");
+        } catch (IOException e) {
+            System.out.println("[CORREO] No se pudo avisar al local del pedido " + numero + ": " + e.getMessage());
+        }
+        try {
+            enviarCorreo(email, asuntoCliente, paraElCliente);
+            System.out.println("[CORREO] Comprobante del pedido " + numero + " enviado a " + email);
+            return true;
+        } catch (IOException e) {
+            System.out.println("[CORREO] No se pudo enviar el comprobante " + numero + " a " + email + ": " + e.getMessage());
+            return false;
         }
     }
 
