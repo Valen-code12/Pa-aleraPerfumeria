@@ -25,3 +25,29 @@ CREATE TABLE IF NOT EXISTS proveedores (
     telefono  VARCHAR(30)  NOT NULL,
     direccion VARCHAR(150) NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS pedidos (
+    id_pedido      INT AUTO_INCREMENT PRIMARY KEY,
+    fecha          DATETIME NOT NULL,
+    cliente_nombre VARCHAR(60)  NOT NULL,
+    cliente_email  VARCHAR(100) NOT NULL,
+    telefono       VARCHAR(30)  NOT NULL,
+    entrega        ENUM('RETIRO','ENVIO') NOT NULL,
+    direccion      VARCHAR(150) NULL,                 -- solo si es envío
+    pago           ENUM('TRANSFERENCIA','EFECTIVO') NOT NULL,
+    costo_envio    DECIMAL(10,2) NOT NULL DEFAULT 0,
+    total          DECIMAL(10,2) NOT NULL,
+    observaciones  VARCHAR(255) NULL
+);
+
+CREATE TABLE IF NOT EXISTS pedido_items (
+    id_item     INT AUTO_INCREMENT PRIMARY KEY,
+    id_pedido   INT NOT NULL,
+    id_producto INT NULL,                             -- queda vacío si después se borra el producto
+    nombre      VARCHAR(100) NOT NULL,                -- se guarda el nombre y el precio del momento de la compra
+    codigo      VARCHAR(50)  NOT NULL,
+    precio      DECIMAL(10,2) NOT NULL,
+    cantidad    INT NOT NULL,
+    FOREIGN KEY (id_pedido)   REFERENCES pedidos(id_pedido)       ON DELETE CASCADE,
+    FOREIGN KEY (id_producto) REFERENCES productos(id_producto)   ON DELETE SET NULL
+);
