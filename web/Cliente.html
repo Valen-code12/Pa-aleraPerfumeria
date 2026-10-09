@@ -37,6 +37,8 @@
       .carrusel-local img { height: 340px; }
       .btn-carrito .texto { display: none; }
     }
+    .datos-local a { color: var(--turquesa-oscuro); text-decoration: none; }
+    .datos-local a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -106,11 +108,16 @@
           <span class="carousel-control-next-icon" aria-hidden="true"></span><span class="visually-hidden">Siguiente</span>
         </button>
       </div>
-      <div class="row text-center">
-        <div class="col-md-4 mb-2"><strong>Redes</strong><br>
-          <span class="text-muted">Instagram: laplacita.pa<br>Facebook: Pañalera La Placita</span></div>
-        <div class="col-md-4 mb-2"><strong>Contacto</strong><br><span class="text-muted">Teléfono / Celular</span></div>
-        <div class="col-md-4 mb-2"><strong>Ubicación</strong><br><span class="text-muted">Dirección del local</span></div>
+      <div class="row text-center datos-local">
+        <div class="col-md-4 mb-3"><strong>Redes</strong><br>
+          <span class="text-muted">Instagram: <a href="https://www.instagram.com/laplacita.pa" target="_blank" rel="noopener">laplacita.pa</a><br>
+          Facebook: Pañalera La Placita</span></div>
+        <div class="col-md-4 mb-3"><strong>Contacto</strong><br>
+          <span class="text-muted">Teléfono: <a href="tel:+541145359379">4535-9379</a><br>
+          Mail: <a href="mailto:laplacita.p@gmail.com">laplacita.p@gmail.com</a></span></div>
+        <div class="col-md-4 mb-3"><strong>Ubicación</strong><br>
+          <span class="text-muted"><a href="https://www.google.com/maps/search/?api=1&amp;query=Av.+Piedrabuena+4990%2C+Villa+Lugano%2C+Buenos+Aires" target="_blank" rel="noopener">Av. Piedrabuena 4990</a><br>
+          Villa Lugano, Buenos Aires</span></div>
       </div>
     </section>
 
@@ -159,6 +166,7 @@
 
     <!-- CARRITO -->
     <section id="carrito" class="d-none">
+      <div id="resultadoPedido" class="d-none" role="alert"></div>
       <div class="table-responsive bg-white shadow-sm rounded">
         <table class="table align-middle mb-0">
           <thead><tr><th>Producto</th><th>Precio</th><th>Cantidad</th><th>Subtotal</th><th></th></tr></thead>
@@ -169,6 +177,62 @@
         <div class="col-6 p-3 border-end fw-semibold">Total</div>
         <div class="col-6 p-3 precio" id="totalCarrito">$0,00</div>
       </div>
+
+      <!-- Datos para hacer el pedido: el servidor lo guarda y manda los mails -->
+      <form id="formPedido" class="bg-white shadow-sm rounded p-3 mt-3 d-none">
+        <h6 class="mb-3">Finalizar pedido</h6>
+        <div class="alert alert-info py-2 small">
+          <strong>Forma de pago:</strong> podés pagar por <strong>transferencia (Mercado Pago)</strong> o en <strong>efectivo</strong>.
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="pTelefono">Teléfono de contacto</label>
+          <input type="tel" class="form-control" id="pTelefono" maxlength="30" placeholder="11 5555-1234" required>
+        </div>
+
+        <div class="mb-3">
+          <div class="form-label">¿Cómo querés recibirlo?</div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="entrega" id="eRetiro" value="RETIRO" checked>
+            <label class="form-check-label" for="eRetiro">Retiro en el local (Av. Piedrabuena 4990, Villa Lugano)</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="entrega" id="eEnvio" value="ENVIO">
+            <label class="form-check-label" for="eEnvio">Envío a domicilio</label>
+          </div>
+          <div id="bloqueEnvio" class="mt-2 d-none">
+            <input class="form-control" id="pDireccion" maxlength="150" placeholder="Calle, número, piso/depto y localidad" aria-label="Dirección de entrega">
+            <div class="form-text" id="textoEnvio"></div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <div class="form-label">Forma de pago</div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="pago" id="pTransf" value="TRANSFERENCIA" required>
+            <label class="form-check-label" for="pTransf">Transferencia (Mercado Pago)</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="radio" name="pago" id="pEfectivo" value="EFECTIVO">
+            <label class="form-check-label" for="pEfectivo">Efectivo</label>
+          </div>
+          <div class="form-text" id="textoPago"></div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="pObs">Observaciones (opcional)</label>
+          <textarea class="form-control" id="pObs" rows="2" maxlength="255"></textarea>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center fs-5">
+          <span class="fw-semibold">Total del pedido</span>
+          <span class="precio" id="totalPedido">$0,00</span>
+        </div>
+        <div class="small text-muted mb-3" id="notaTotal"></div>
+
+        <button type="submit" class="btn btn-principal w-100" id="btnPedido">Hacer pedido</button>
+        <div class="form-text text-center mt-2">Te enviamos el comprobante a tu mail.</div>
+      </form>
     </section>
   </main>
 
@@ -219,6 +283,7 @@
         $("grilla").innerHTML = `<div class="col-12 text-center text-danger py-4">${esc(err.message || "No se pudo conectar con el servidor.")}</div>`;
         return;
       }
+      await cargarInfoPedido();
       cargarCategorias();
       limpiarCarrito();
       dibujarGrilla();
@@ -365,6 +430,8 @@
         </tr>`;
       }).join("") : `<tr><td colspan="5" class="text-center text-muted py-4">Tu carrito está vacío. Mirá los <a href="#productos">productos</a>.</td></tr>`;
       $("totalCarrito").textContent = dinero(total);
+      if (carrito.length) $("resultadoPedido").classList.add("d-none");
+      actualizarFormPedido();
     }
     function cambiarCantidad(id, campo) {
       const p = productos.find((x) => x.id === id);
@@ -381,6 +448,110 @@
       guardarCarrito();
       dibujarCarrito();
     }
+
+    // ----- Hacer el pedido -----
+    let costoEnvio = null;   // null = el costo del envío se coordina con el local
+    async function cargarInfoPedido() {
+      try {
+        const res = await fetch("/api/pedidos", { headers: { "X-Token": sessionStorage.getItem("token") || "" } });
+        if (res.ok) costoEnvio = JSON.parse(await res.text()).costoEnvio;
+      } catch (e) { costoEnvio = null; }
+    }
+
+    const valorRadio = (nombre) => {
+      const r = document.querySelector(`input[name="${nombre}"]:checked`);
+      return r ? r.value : "";
+    };
+
+    // Muestra u oculta el formulario y recalcula el total según retiro o envío
+    function actualizarFormPedido() {
+      $("formPedido").classList.toggle("d-none", carrito.length === 0);
+      const envio = valorRadio("entrega") === "ENVIO";
+      $("bloqueEnvio").classList.toggle("d-none", !envio);
+      $("pDireccion").required = envio;
+
+      let total = carrito.reduce((suma, c) => {
+        const p = productos.find((x) => x.id === c.id);
+        return suma + (p ? p.precio * c.cantidad : 0);
+      }, 0);
+      let nota = "";
+      if (envio) {
+        if (costoEnvio === null) {
+          $("textoEnvio").textContent = "El costo del envío se coordina con el local y no está incluido en el total.";
+          nota = "Más el costo del envío (a coordinar con el local).";
+        } else if (costoEnvio === 0) {
+          $("textoEnvio").textContent = "Envío sin costo.";
+        } else {
+          $("textoEnvio").textContent = "Costo del envío: " + dinero(costoEnvio) + " (se suma al total).";
+          total += costoEnvio;
+        }
+      }
+      $("totalPedido").textContent = dinero(total);
+      $("notaTotal").textContent = nota;
+
+      const pago = valorRadio("pago");
+      $("textoPago").textContent =
+        pago === "TRANSFERENCIA" ? "Te enviamos por mail el comprobante con las indicaciones para transferir." :
+        pago === "EFECTIVO" ? (envio ? "Abonás en efectivo al recibir el pedido." : "Abonás en efectivo al retirar el pedido en el local.") : "";
+    }
+    document.querySelectorAll('#formPedido input[type="radio"]').forEach((r) =>
+      r.addEventListener("change", actualizarFormPedido));
+
+    function mostrarResultado(texto, tipo) {
+      $("resultadoPedido").className = "alert alert-" + tipo + " mb-3";
+      $("resultadoPedido").textContent = texto;
+      window.scrollTo(0, 0);
+    }
+
+    $("formPedido").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!carrito.length) return;
+
+      const entrega = valorRadio("entrega");
+      const datos = {
+        items: carrito.map((c) => c.id + ":" + c.cantidad).join(","),
+        telefono: $("pTelefono").value.trim(),
+        entrega: entrega,
+        direccion: entrega === "ENVIO" ? $("pDireccion").value.trim() : "",
+        pago: valorRadio("pago"),
+        observaciones: $("pObs").value.trim()
+      };
+
+      const boton = $("btnPedido");
+      boton.disabled = true;
+      boton.textContent = "Enviando pedido...";
+      try {
+        const res = await fetch("/api/pedidos", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Token": sessionStorage.getItem("token") || "" },
+          body: new URLSearchParams(datos).toString()
+        });
+        const texto = await res.text();
+        if (res.status === 401) { sessionStorage.clear(); window.location.href = "InicioDeSesion.html"; return; }
+
+        if (!res.ok) {
+          await cargarProductos();            // actualiza stock y carrito por si cambió algo
+          mostrarResultado(texto, "danger");
+          return;
+        }
+
+        const r = JSON.parse(texto);
+        carrito = [];
+        guardarCarrito();
+        $("formPedido").reset();
+        await cargarProductos();              // el stock ya cambió
+        mostrarResultado("¡Pedido N° " + r.numero + " realizado! Total: " + dinero(r.total) + ". " +
+          (r.mailCliente
+            ? "Te enviamos el comprobante a tu mail (revisá también la carpeta de spam). Recordá que podés pagar por transferencia (Mercado Pago) o en efectivo."
+            : "Tu pedido quedó registrado, pero no pudimos enviarte el comprobante por mail. Guardá este número y comunicate con el local al 4535-9379."),
+          r.mailCliente ? "success" : "warning");
+      } catch (err) {
+        mostrarResultado("No se pudo conectar con el servidor. Tu pedido no se envió.", "danger");
+      } finally {
+        boton.disabled = false;
+        boton.textContent = "Hacer pedido";
+      }
+    });
 
     cargarProductos();
   </script>
