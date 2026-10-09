@@ -181,7 +181,16 @@
     const $ = (id) => document.getElementById(id);
     const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const dinero = (n) => "$" + Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const IMAGEN = "imagenes/panaleraIcono.jpg";   // hasta que los productos tengan foto propia
+    const IMAGEN = "imagenes/panaleraIcono.jpg";   // se usa si el producto no tiene foto propia
+    // Foto de cada producto según su código (el mismo que se carga en el Administrador).
+    // Para sumar un producto con foto: copiar la imagen a la carpeta imagenes y agregar una línea acá.
+    const IMAGENES = {
+      "O324": "imagenes/toddler-x48.jpg",
+      "O317": "imagenes/toddler-x48-aloe.jpg",
+      "1047": "imagenes/huggies-triple-96.jpg",
+      "2189": "imagenes/huggies-limpieza-112.jpg"
+    };
+    const imagenDe = (p) => IMAGENES[p.codigo] || IMAGEN;
 
     $("nombreUsuario").textContent = sessionStorage.getItem("nombre") || "Cliente";
     $("btnSalir").addEventListener("click", () => {
@@ -257,7 +266,7 @@
       const sin = p.stock === 0;
       return `<div class="col-6 col-md-4 col-lg-3">
         <div class="card tarjeta-producto shadow-sm h-100 ${sin ? "sin-stock" : ""}" onclick="location.hash='#producto/${p.id}'">
-          <img src="${IMAGEN}" alt="" class="img-producto">
+          <img src="${imagenDe(p)}" alt="${esc(p.nombre)}" class="img-producto" onerror="this.onerror=null;this.src='${IMAGEN}'">
           <div class="card-body p-2">
             <div class="fw-semibold">${esc(p.nombre)}</div>
             <div class="small text-muted">${esc(p.categoria)}</div>
@@ -298,6 +307,9 @@
       const p = productos.find((x) => x.id === id);
       if (!p) { location.hash = "#productos"; return; }
       productoActual = p;
+      $("detImagen").onerror = function () { this.onerror = null; this.src = IMAGEN; };
+      $("detImagen").src = imagenDe(p);
+      $("detImagen").alt = p.nombre;
       $("detNombre").textContent = p.nombre;
       $("detDescripcion").textContent = p.categoria + " · Código " + p.codigo;
       $("detPrecio").textContent = dinero(p.precio);
@@ -308,9 +320,12 @@
       $("detCantidad").max = p.stock;
       $("detCantidad").value = 1;
 
-      // Recomendados al azar (los que tienen stock primero)
+      // Recomendados al azar de la MISMA categoría (perfumería -> perfumería, pañales -> pañales).
+      // Si la categoría no tiene otros productos, se completa con productos al azar de cualquier categoría.
+      const azar = (lista) => lista.sort(() => Math.random() - 0.5).sort((a, b) => (b.stock > 0) - (a.stock > 0));
+      const mismaCat = productos.filter((x) => x.id !== id && x.categoria === p.categoria);
       const otros = productos.filter((x) => x.id !== id);
-      const mezclados = otros.sort(() => Math.random() - 0.5).sort((a, b) => (b.stock > 0) - (a.stock > 0)).slice(0, 4);
+      const mezclados = azar(mismaCat.length ? mismaCat : otros).slice(0, 4);
       $("recomendados").innerHTML = mezclados.length ? mezclados.map(tarjeta).join("")
         : `<div class="col-12 text-muted">Todavía no hay otros productos.</div>`;
     }
