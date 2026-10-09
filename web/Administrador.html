@@ -27,6 +27,8 @@
     .carrusel-local .carousel-control-prev-icon, .carrusel-local .carousel-control-next-icon { filter: invert(1) grayscale(1); }
     .carrusel-local .carousel-indicators [data-bs-target] { background-color: var(--turquesa-oscuro); }
     @media (max-width: 576px) { .carrusel-local img { height: 340px; } }
+    .datos-local a { color: var(--turquesa-oscuro); text-decoration: none; }
+    .datos-local a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -84,10 +86,16 @@
           <span class="carousel-control-next-icon" aria-hidden="true"></span><span class="visually-hidden">Siguiente</span>
         </button>
       </div>
-      <div class="row text-center">
-        <div class="col-md-4 mb-2"><strong>Redes</strong><br><span class="text-muted">Instagram / Facebook</span></div>
-        <div class="col-md-4 mb-2"><strong>Contacto</strong><br><span class="text-muted">Teléfono / Celular</span></div>
-        <div class="col-md-4 mb-2"><strong>Ubicación</strong><br><span class="text-muted">Dirección del local</span></div>
+      <div class="row text-center datos-local">
+        <div class="col-md-4 mb-3"><strong>Redes</strong><br>
+          <span class="text-muted">Instagram: <a href="https://www.instagram.com/laplacita.pa" target="_blank" rel="noopener">laplacita.pa</a><br>
+          Facebook: Pañalera La Placita</span></div>
+        <div class="col-md-4 mb-3"><strong>Contacto</strong><br>
+          <span class="text-muted">Teléfono: <a href="tel:+541145359379">4535-9379</a><br>
+          Mail: <a href="mailto:laplacita.p@gmail.com">laplacita.p@gmail.com</a></span></div>
+        <div class="col-md-4 mb-3"><strong>Ubicación</strong><br>
+          <span class="text-muted"><a href="https://www.google.com/maps/search/?api=1&amp;query=Av.+Piedrabuena+4990%2C+Villa+Lugano%2C+Buenos+Aires" target="_blank" rel="noopener">Av. Piedrabuena 4990</a><br>
+          Villa Lugano, Buenos Aires</span></div>
       </div>
     </section>
  
