@@ -182,7 +182,7 @@
       <form id="formPedido" class="bg-white shadow-sm rounded p-3 mt-3 d-none">
         <h6 class="mb-3">Finalizar pedido</h6>
         <div class="alert alert-info py-2 small">
-          <strong>Forma de pago:</strong> podés pagar por <strong>transferencia (Mercado Pago)</strong> o en <strong>efectivo</strong>.
+          <strong>Forma de pago:</strong> en <strong>efectivo</strong>, al retirar o al recibir el pedido.
         </div>
 
         <div class="mb-3">
@@ -208,14 +208,7 @@
 
         <div class="mb-3">
           <div class="form-label">Forma de pago</div>
-          <div class="form-check">
-            <input class="form-check-input" type="radio" name="pago" id="pTransf" value="TRANSFERENCIA" required>
-            <label class="form-check-label" for="pTransf">Transferencia (Mercado Pago)</label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="radio" name="pago" id="pEfectivo" value="EFECTIVO">
-            <label class="form-check-label" for="pEfectivo">Efectivo</label>
-          </div>
+          <div>Efectivo</div>
           <div class="form-text" id="textoPago"></div>
         </div>
 
@@ -489,10 +482,9 @@
       $("totalPedido").textContent = dinero(total);
       $("notaTotal").textContent = nota;
 
-      const pago = valorRadio("pago");
-      $("textoPago").textContent =
-        pago === "TRANSFERENCIA" ? "Te enviamos por mail el comprobante con las indicaciones para transferir." :
-        pago === "EFECTIVO" ? (envio ? "Abonás en efectivo al recibir el pedido." : "Abonás en efectivo al retirar el pedido en el local.") : "";
+      $("textoPago").textContent = envio
+        ? "Abonás en efectivo al recibir el pedido."
+        : "Abonás en efectivo al retirar el pedido en el local.";
     }
     document.querySelectorAll('#formPedido input[type="radio"]').forEach((r) =>
       r.addEventListener("change", actualizarFormPedido));
@@ -513,7 +505,7 @@
         telefono: $("pTelefono").value.trim(),
         entrega: entrega,
         direccion: entrega === "ENVIO" ? $("pDireccion").value.trim() : "",
-        pago: valorRadio("pago"),
+        pago: "EFECTIVO",
         observaciones: $("pObs").value.trim()
       };
 
@@ -542,7 +534,7 @@
         await cargarProductos();              // el stock ya cambió
         mostrarResultado("¡Pedido N° " + r.numero + " realizado! Total: " + dinero(r.total) + ". " +
           (r.mailCliente
-            ? "Te enviamos el comprobante a tu mail (revisá también la carpeta de spam). Recordá que podés pagar por transferencia (Mercado Pago) o en efectivo."
+            ? "Te enviamos el comprobante a tu mail (revisá también la carpeta de spam). Recordá que el pago es en efectivo."
             : "Tu pedido quedó registrado, pero no pudimos enviarte el comprobante por mail. Guardá este número y comunicate con el local al 4535-9379."),
           r.mailCliente ? "success" : "warning");
       } catch (err) {
