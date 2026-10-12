@@ -298,7 +298,7 @@
       $("cuentaCarrito").textContent = carrito.reduce((s, c) => s + c.cantidad, 0);
     }
 
-    // ----- Navegación por secciones (#inicio, #productos, #producto/5, #carrito) -----
+    // Navegación por secciones (#inicio, #productos, #producto/5, #carrito)
     function navegar() {
       const hash = location.hash.replace("#", "") || "inicio";
       let seccion = hash;
@@ -406,7 +406,7 @@
       location.hash = "#carrito";
     });
 
-    // ----- Carrito -----
+    // Carrito
     function dibujarCarrito() {
       let total = 0;
       $("tablaCarrito").innerHTML = carrito.length ? carrito.map((c) => {
@@ -442,7 +442,7 @@
       dibujarCarrito();
     }
 
-    // ----- Hacer el pedido -----
+    //Hacer el pedido
     let costoEnvio = null;   // null = el costo del envío se coordina con el local
     async function cargarInfoPedido() {
       try {
@@ -522,7 +522,7 @@
         if (res.status === 401) { sessionStorage.clear(); window.location.href = "InicioDeSesion.html"; return; }
 
         if (!res.ok) {
-          await cargarProductos();            // actualiza stock y carrito por si cambió algo
+          await cargarProductos();   // actualiza stock y carrito por si cambió algo
           mostrarResultado(texto, "danger");
           return;
         }

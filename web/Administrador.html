@@ -201,7 +201,7 @@
         throw new Error("No se pudo conectar con el servidor.");
       }
       const texto = await res.text();
-      if (res.status === 401) {            // sesión vencida (por ejemplo, se reinició el servidor)
+      if (res.status === 401) {   // sesión vencida (por ejemplo, se reinició el servidor)
         sessionStorage.clear();
         window.location.href = "InicioDeSesion.html";
       }
@@ -257,7 +257,7 @@
  
     $("filtro").addEventListener("input", dibujarProductos);
  
-    // ----- Productos -----
+    // Productos
     $("btnNuevoProducto").addEventListener("click", () => {
       editando = null;
       $("formProducto").reset();
@@ -330,7 +330,7 @@
     });
  
 
-    // ----- Documento (PDF o Excel) de cada producto -----
+    // Documento (PDF o Excel) de cada producto
     const MAX_DOC_MB = 10;
     let documentos = new Map();   // id del producto -> "pdf" | "xlsx" | "xls"
     let productoDoc = null;       // producto al que se le está subiendo un documento

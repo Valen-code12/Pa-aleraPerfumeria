@@ -108,7 +108,7 @@ public class Servidor {
         }
     }
 
-    // ---------- INICIO DE SESIÓN (2 pasos) ----------
+    // INICIO DE SESIÓN (2 pasos) 
 
     // Paso 1: comprueba mail y contraseña y, si están bien, envía un código al mail
     static void iniciarSesion(HttpExchange ex) throws IOException {
@@ -172,7 +172,7 @@ public class Servidor {
         }
     }
 
-    // ---------- REGISTRO (2 pasos) ----------
+    // REGISTRO (2 pasos)
 
     // Paso 1: valida los datos y envía el código. Todavía NO se crea el usuario.
     static void registrar(HttpExchange ex) throws IOException {
@@ -251,7 +251,7 @@ public class Servidor {
         }
     }
 
-    // ---------- RECUPERAR CONTRASEÑA (2 pasos) ----------
+    // RECUPERAR CONTRASEÑA (2 pasos)
 
     // Paso 1: si el mail existe, envía un código. La respuesta es SIEMPRE la misma,
     // así nadie puede averiguar qué mails están registrados.
@@ -329,12 +329,12 @@ public class Servidor {
         }
     }
 
-    // ---------- Sesiones: al confirmar el código el servidor entrega un "token" ----------
+    // Sesiones: al confirmar el código el servidor entrega un "token" 
 
-    // token -> rol. Las rutas del administrador piden el token en el encabezado X-Token
+    // token = rol. Las rutas del administrador piden el token en el encabezado X-Token
     static final Map<String, String> sesiones = new ConcurrentHashMap<>();
 
-    // token -> {nombre, email}. Se usa para saber a quién mandarle el comprobante del pedido
+    // token = {nombre, email}. Se usa para saber a quién mandarle el comprobante del pedido
     static final Map<String, String[]> datosSesion = new ConcurrentHashMap<>();
 
     static String crearSesion(String rol, String nombre, String email) {
@@ -379,8 +379,8 @@ public class Servidor {
         return valor;
     }
 
-    // ---------- CATÁLOGO (cualquier usuario con sesión: cliente o administrador) ----------
-    //   GET /api/catalogo -> misma lista que /api/productos, solo lectura
+    // CATÁLOGO (cualquier usuario con sesión: cliente o administrador) 
+    // GET /api/catalogo -> misma lista que /api/productos, solo lectura
 
     static void catalogo(HttpExchange ex) throws IOException {
         String token = ex.getRequestHeaders().getFirst("X-Token");
@@ -400,14 +400,14 @@ public class Servidor {
         }
     }
 
-    // ---------- PEDIDOS (cliente o administrador con sesión) ----------
-    //   GET  /api/pedidos -> datos para mostrar antes de pedir (costo del envío)
-    //   POST /api/pedidos -> registra el pedido, descuenta el stock y envía los mails
+    // PEDIDOS (cliente o administrador con sesión)
+    // GET  /api/pedidos = datos para mostrar antes de pedir (costo del envío)
+    // POST /api/pedidos = registra el pedido, descuenta el stock y envía los mails
     //
     // En config.properties se pueden agregar (todas opcionales):
-    //   CORREO_PEDIDOS=mail donde llegan los pedidos (si no está, se usa CORREO_ORIGEN)
-    //   COSTO_ENVIO=    vacío = "se coordina con el local" | 0 = envío sin costo | 1500 = se suma al total
-    //   ALIAS_MERCADOPAGO=alias para las transferencias (se muestra en el comprobante)
+    // CORREO_PEDIDOS=mail donde llegan los pedidos (si no está, se usa CORREO_ORIGEN)
+    // COSTO_ENVIO=    vacío = "se coordina con el local" | 0 = envío sin costo | 1500 = se suma al total
+    // ALIAS_MERCADOPAGO=alias para las transferencias (se muestra en el comprobante)
 
     static final String LOCAL_DIRECCION = "Av. Piedrabuena 4990 - Villa Lugano";
     static final String LOCAL_TELEFONO = "4535-9379";
@@ -614,7 +614,7 @@ public class Servidor {
         }
     }
 
-    // ---------- Mails del pedido ----------
+    // Mails del pedido
 
     static String pesos(BigDecimal n) {
         return String.format(Locale.forLanguageTag("es-AR"), "$%,.2f", n);
@@ -660,8 +660,8 @@ public class Servidor {
         return "Efectivo: abonás " + (entrega.equals("ENVIO") ? "al recibir el pedido." : "al retirar el pedido en el local.") + "\r\n";
     }
 
-    // Envía el aviso al local y el comprobante al cliente.
-    // Devuelve true si el comprobante salió (o si está en modo prueba y quedó en la consola).
+    // Envía el aviso al local y el comprobante al cliente
+    // Devuelve true si el comprobante salió (o si está en modo prueba y quedó en la consola)
     static boolean enviarMailsPedido(PedidoCreado p, String nombre, String email, String telefono,
             String entrega, String direccion, String pago, String obs) {
 
@@ -721,11 +721,11 @@ public class Servidor {
         }
     }
 
-    // ---------- PRODUCTOS (solo administrador) ----------
-    //   GET    /api/productos      -> lista
-    //   POST   /api/productos      -> crea uno nuevo
-    //   PUT    /api/productos/5    -> edita el producto 5
-    //   DELETE /api/productos/5    -> elimina el producto 5
+    // PRODUCTOS (solo administrador)
+    //   GET    /api/productos = lista
+    //   POST   /api/productos = crea uno nuevo
+    //   PUT    /api/productos/5 = edita el producto 5
+    //   DELETE /api/productos/5 = elimina el producto 5
 
     record Producto(String nombre, String codigo, String categoria, BigDecimal precio, int stock) {}
 
@@ -863,7 +863,7 @@ public class Servidor {
         }
     }
 
-    // ---------- PROVEEDORES (solo administrador) ----------
+    //PROVEEDORES (solo administrador)
     // Mismas operaciones que productos, en /api/proveedores
 
     record Proveedor(String nombre, String contacto, String telefono, String direccion) {}
@@ -977,13 +977,13 @@ public class Servidor {
         }
     }
 
-    // ---------- Documento de cada producto: PDF o Excel (solo administrador) ----------
+    // Documento de cada producto: PDF o Excel (solo administrador)
     // Se guardan en la carpeta "documentos" (al lado de "web", no es pública) como producto-<id>.pdf / .xlsx / .xls
     // Cada producto tiene como máximo un documento.
-    //   GET    /api/documentos      -> lista: [{"id":1,"tipo":"pdf"},{"id":5,"tipo":"xlsx"}]
-    //   GET    /api/documentos/5    -> devuelve el documento del producto 5
-    //   POST   /api/documentos/5    -> sube (o reemplaza) el documento; el cuerpo es el archivo y X-Nombre su nombre
-    //   DELETE /api/documentos/5    -> elimina el documento del producto 5
+    //   GET    /api/documentos = lista: [{"id":1,"tipo":"pdf"},{"id":5,"tipo":"xlsx"}]
+    //   GET    /api/documentos/5 = devuelve el documento del producto 5
+    //   POST   /api/documentos/5 = sube (o reemplaza) el documento; el cuerpo es el archivo y X-Nombre su nombre
+    //   DELETE /api/documentos/5 = elimina el documento del producto 5
 
     static final Path CARPETA_DOC = Paths.get("documentos").toAbsolutePath().normalize();
     static final int MAX_DOC_BYTES = 10 * 1024 * 1024;   // 10 MB
@@ -1125,7 +1125,7 @@ public class Servidor {
         return json.append("]").toString();
     }
 
-    // Códigos de verificación (se guardan en memoria)+
+    // Códigos de verificación (se guardan en memoria)
 
     static final SecureRandom ALEATORIO = new SecureRandom();
 
