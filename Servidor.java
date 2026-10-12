@@ -1125,7 +1125,7 @@ public class Servidor {
         return json.append("]").toString();
     }
 
-    // ---------- Códigos de verificación (se guardan en memoria) ----------
+    // Códigos de verificación (se guardan en memoria)+
 
     static final SecureRandom ALEATORIO = new SecureRandom();
 
@@ -1193,7 +1193,7 @@ public class Servidor {
         return c;
     }
 
-    // ---------- Base de datos ----------
+    // Base de datos 
 
     static void validarRegistro(String nombre, String email, String rol, String clave) {
         if (nombre.isEmpty()) {
@@ -1255,7 +1255,7 @@ public class Servidor {
         }
     }
 
-    // Convierte "nombre=Ana&email=a%40b.com&rol=CLIENTE" en un Map
+    // Convierte "nombre=NomprePersona&email=a%40b.com&rol=CLIENTE" en un Map
     static Map<String, String> leerFormulario(HttpExchange ex) throws IOException {
         String cuerpo = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         Map<String, String> datos = new HashMap<>();
@@ -1275,7 +1275,7 @@ public class Servidor {
                     .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
     }
 
-    // ---------- Envío de correo (SMTP de Gmail, sin librerías externas) ----------
+    // Envío de correo (SMTP de Gmail, sin librerías externas)
 
     static boolean correosActivados() {
         return !CORREO_ORIGEN.equals("tu_correo@gmail.com")
@@ -1410,7 +1410,7 @@ public class Servidor {
         throw new UsuarioNoEncontradoException("Mail o contraseña incorrectos.");
     }
 
-    // ---------- Contraseñas: se guardan "hasheadas" (PBKDF2 + sal), nunca en texto ----------
+    // Contraseñas: se guardan "hasheadas" (PBKDF2 + sal), nunca en texto
 
     static final int ITERACIONES = 65536;
 
