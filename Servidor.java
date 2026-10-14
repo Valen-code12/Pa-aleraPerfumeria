@@ -109,18 +109,18 @@ public class Servidor {
             new InetSocketAddress("0.0.0.0", puerto), 0
         );  
 
-        servidor.createContext("/", Servidor::servirArchivo);                     // páginas de la carpeta web
-        servidor.createContext("/login", Servidor::iniciarSesion);                // paso 1: mail + contraseña
-        servidor.createContext("/login/verificar", Servidor::verificarLogin);     // paso 2: código
-        servidor.createContext("/registro", Servidor::registrar);                 // paso 1: datos del usuario
-        servidor.createContext("/registro/verificar", Servidor::verificarRegistro); // paso 2: código
-        servidor.createContext("/recuperar", Servidor::recuperar);                // paso 1: pide el código
-        servidor.createContext("/recuperar/confirmar", Servidor::confirmarRecuperacion); // paso 2: código + clave nueva
-        servidor.createContext("/api/productos", Servidor::productos);            // alta, baja, edición y lista (solo administrador)
-        servidor.createContext("/api/proveedores", Servidor::proveedores);        // alta, baja, edición y lista (solo administrador)
-        servidor.createContext("/api/documentos", Servidor::documentos);          // PDF o Excel de cada producto (solo administrador)
-        servidor.createContext("/api/pedidos", Servidor::pedidos);                // hacer un pedido (cliente con sesión)
-        servidor.createContext("/api/catalogo", Servidor::catalogo);              // lista de productos para cualquier usuario con sesión
+        ruta(servidor, "/", Servidor::servirArchivo);                     // páginas de la carpeta web
+        ruta(servidor, "/login", Servidor::iniciarSesion);                // paso 1: mail + contraseña
+        ruta(servidor, "/login/verificar", Servidor::verificarLogin);     // paso 2: código
+        ruta(servidor, "/registro", Servidor::registrar);                 // paso 1: datos del usuario
+        ruta(servidor, "/registro/verificar", Servidor::verificarRegistro); // paso 2: código
+        ruta(servidor, "/recuperar", Servidor::recuperar);                // paso 1: pide el código
+        ruta(servidor, "/recuperar/confirmar", Servidor::confirmarRecuperacion); // paso 2: código + clave nueva
+        ruta(servidor, "/api/productos", Servidor::productos);            // alta, baja, edición y lista (solo administrador)
+        ruta(servidor, "/api/proveedores", Servidor::proveedores);        // alta, baja, edición y lista (solo administrador)
+        ruta(servidor, "/api/documentos", Servidor::documentos);          // PDF o Excel de cada producto (solo administrador)
+        ruta(servidor, "/api/pedidos", Servidor::pedidos);                // hacer un pedido (cliente con sesión)
+        ruta(servidor, "/api/catalogo", Servidor::catalogo);              // lista de productos para cualquier usuario con sesión
 
         // Varios hilos: mientras se envía un mail no se bloquea a los demás usuarios
         servidor.setExecutor(Executors.newCachedThreadPool());
