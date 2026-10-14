@@ -44,6 +44,7 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
+import com.sun.net.httpserver.HttpHandler;
 
 public class Servidor {
 
@@ -81,6 +82,23 @@ public class Servidor {
     static final long VIGENCIA_MS = 10 * 60 * 1000;      // el código vale 10 minutos
     static final long ESPERA_REENVIO_MS = 60 * 1000;     // hay que esperar 1 minuto para pedir otro
     static final int MAX_INTENTOS = 5;                   // intentos fallidos antes de anularlo
+
+    static final String ORIGEN_PERMITIDO = "https://valen-code12.github.io";
+
+    // Registra una ruta agregándole CORS y respondiendo el "preflight" (OPTIONS)
+    static void ruta(HttpServer servidor, String path, HttpHandler manejador) {
+    servidor.createContext(path, ex -> {
+        ex.getResponseHeaders().set("Access-Control-Allow-Origin", ORIGEN_PERMITIDO);
+        ex.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        ex.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, X-Token, X-Nombre");
+        if ("OPTIONS".equals(ex.getRequestMethod())) {
+            ex.sendResponseHeaders(204, -1);
+            ex.close();
+            return;
+        }
+        manejador.handle(ex);
+    });
+    }
 
     public static void main(String[] args) throws IOException {
         int puerto = Integer.parseInt(
