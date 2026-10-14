@@ -53,7 +53,7 @@ public class Servidor {
     static final java.util.Properties CONFIG = cargarConfig();
 
     // Datos de conexión a MySQL
-    static final String URL = "jdbc:mysql://localhost:3306/panalera_db";
+    static final String URL = CONFIG.getProperty("URL_BD", "jdbc:mysql://localhost:3306/panalera_db");
     static final String USUARIO_BD = CONFIG.getProperty("USUARIO_BD", "root");
     static final String CLAVE_BD = CONFIG.getProperty("CLAVE_BD", "");
 
