@@ -83,7 +83,13 @@ public class Servidor {
     static final int MAX_INTENTOS = 5;                   // intentos fallidos antes de anularlo
 
     public static void main(String[] args) throws IOException {
-        HttpServer servidor = HttpServer.create(new InetSocketAddress(8080), 0);
+        int puerto = Integer.parseInt(
+            System.getenv().getOrDefault("PORT", "8080")
+        );
+
+        HttpServer servidor = HttpServer.create(
+            new InetSocketAddress("0.0.0.0", puerto), 0
+        );  
 
         servidor.createContext("/", Servidor::servirArchivo);                     // páginas de la carpeta web
         servidor.createContext("/login", Servidor::iniciarSesion);                // paso 1: mail + contraseña
