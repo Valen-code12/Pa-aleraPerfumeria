@@ -9,3 +9,5 @@ out/
 .env
 
 config.js
+
+node_modules/
