@@ -5,3 +5,5 @@ config.properties
 bin/
 out/
 *.class
+
+.env
