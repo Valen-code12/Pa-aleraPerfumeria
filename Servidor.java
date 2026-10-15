@@ -14,6 +14,7 @@ import java.math.RoundingMode;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
@@ -43,8 +44,6 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
-import com.sun.net.httpserver.HttpHandler;
-import java.nio.file.Files;
 
 public class Servidor {
 
@@ -53,7 +52,7 @@ public class Servidor {
     static final java.util.Properties CONFIG = cargarConfig();
 
     // Datos de conexión a MySQL
-    static final String URL = CONFIG.getProperty("URL_BD", "jdbc:mysql://localhost:3306/panalera_db");
+    static final String URL = "jdbc:mysql://localhost:3306/panalera_db";
     static final String USUARIO_BD = CONFIG.getProperty("USUARIO_BD", "root");
     static final String CLAVE_BD = CONFIG.getProperty("CLAVE_BD", "");
 
@@ -63,32 +62,17 @@ public class Servidor {
     static final String CLAVE_CORREO = CONFIG.getProperty("CLAVE_CORREO", "");
 
     static java.util.Properties cargarConfig() {
-    java.util.Properties p = new java.util.Properties();
-    
-    // Intentar leer el archivo físico solo si existe (para desarrollo local)
-    java.io.File archivoConfig = new java.io.File("config.properties");
-    if (archivoConfig.exists()) {
+        java.util.Properties p = new java.util.Properties();
         try (java.io.Reader r = new java.io.InputStreamReader(
-                new java.io.FileInputStream(archivoConfig), java.nio.charset.StandardCharsets.UTF_8)) {
+                new java.io.FileInputStream("config.properties"), java.nio.charset.StandardCharsets.UTF_8)) {
             p.load(r);
         } catch (java.io.IOException e) {
-            System.out.println("[CONFIG] Error al leer config.properties: " + e.getMessage());
+            System.out.println("[CONFIG] No se pudo leer config.properties (" + e.getMessage() + "). "
+                    + "Copiá config.properties.example como config.properties y completalo.");
         }
-    } else {
-        System.out.println("[CONFIG] No se encontró config.properties local. Se usarán variables de entorno.");
+        return p;
     }
 
-    // Las variables de entorno (Railway) tienen prioridad absoluta
-    for (String k : new String[]{"URL_BD", "USUARIO_BD", "CLAVE_BD", "CORREO_ORIGEN", "CLAVE_CORREO", "CORREO_PEDIDOS", "COSTO_ENVIO", "ALIAS_MERCADOPAGO"}) {
-        String valorEnv = System.getenv(k);
-        if (valorEnv != null && !valorEnv.isBlank()) {
-            p.setProperty(k, valorEnv);
-        }
-    }
-
-    return p;
-    }
-    
     // Mientras sea true, el código de verificación también se muestra en esta consola.
     // Ponelo en false cuando termines de probar.
     static final boolean DEPURACION = true;
@@ -98,44 +82,21 @@ public class Servidor {
     static final long ESPERA_REENVIO_MS = 60 * 1000;     // hay que esperar 1 minuto para pedir otro
     static final int MAX_INTENTOS = 5;                   // intentos fallidos antes de anularlo
 
-    static final String ORIGEN_PERMITIDO = "https://valen-code12.github.io";
-
-    // Registra una ruta agregándole CORS y respondiendo el "preflight" (OPTIONS)
-    static void ruta(HttpServer servidor, String path, HttpHandler manejador) {
-    servidor.createContext(path, ex -> {
-        ex.getResponseHeaders().set("Access-Control-Allow-Origin", ORIGEN_PERMITIDO);
-        ex.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        ex.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, X-Token, X-Nombre");
-        if ("OPTIONS".equals(ex.getRequestMethod())) {
-            ex.sendResponseHeaders(204, -1);
-            ex.close();
-            return;
-        }
-        manejador.handle(ex);
-    });
-    }
-
     public static void main(String[] args) throws IOException {
-        int puerto = Integer.parseInt(
-            System.getenv().getOrDefault("PORT", "8080")
-        );
+        HttpServer servidor = HttpServer.create(new InetSocketAddress(8080), 0);
 
-        HttpServer servidor = HttpServer.create(
-            new InetSocketAddress("0.0.0.0", puerto), 0
-        );  
-
-        ruta(servidor, "/", Servidor::servirArchivo);                     // páginas de la carpeta web
-        ruta(servidor, "/login", Servidor::iniciarSesion);                // paso 1: mail + contraseña
-        ruta(servidor, "/login/verificar", Servidor::verificarLogin);     // paso 2: código
-        ruta(servidor, "/registro", Servidor::registrar);                 // paso 1: datos del usuario
-        ruta(servidor, "/registro/verificar", Servidor::verificarRegistro); // paso 2: código
-        ruta(servidor, "/recuperar", Servidor::recuperar);                // paso 1: pide el código
-        ruta(servidor, "/recuperar/confirmar", Servidor::confirmarRecuperacion); // paso 2: código + clave nueva
-        ruta(servidor, "/api/productos", Servidor::productos);            // alta, baja, edición y lista (solo administrador)
-        ruta(servidor, "/api/proveedores", Servidor::proveedores);        // alta, baja, edición y lista (solo administrador)
-        ruta(servidor, "/api/documentos", Servidor::documentos);          // PDF o Excel de cada producto (solo administrador)
-        ruta(servidor, "/api/pedidos", Servidor::pedidos);                // hacer un pedido (cliente con sesión)
-        ruta(servidor, "/api/catalogo", Servidor::catalogo);              // lista de productos para cualquier usuario con sesión
+        servidor.createContext("/", Servidor::servirArchivo);                     // páginas de la carpeta web
+        servidor.createContext("/login", Servidor::iniciarSesion);                // paso 1: mail + contraseña
+        servidor.createContext("/login/verificar", Servidor::verificarLogin);     // paso 2: código
+        servidor.createContext("/registro", Servidor::registrar);                 // paso 1: datos del usuario
+        servidor.createContext("/registro/verificar", Servidor::verificarRegistro); // paso 2: código
+        servidor.createContext("/recuperar", Servidor::recuperar);                // paso 1: pide el código
+        servidor.createContext("/recuperar/confirmar", Servidor::confirmarRecuperacion); // paso 2: código + clave nueva
+        servidor.createContext("/api/productos", Servidor::productos);            // alta, baja, edición y lista (solo administrador)
+        servidor.createContext("/api/proveedores", Servidor::proveedores);        // alta, baja, edición y lista (solo administrador)
+        servidor.createContext("/api/documentos", Servidor::documentos);          // PDF o Excel de cada producto (solo administrador)
+        servidor.createContext("/api/pedidos", Servidor::pedidos);                // hacer un pedido (cliente con sesión)
+        servidor.createContext("/api/catalogo", Servidor::catalogo);              // lista de productos para cualquier usuario con sesión
 
         // Varios hilos: mientras se envía un mail no se bloquea a los demás usuarios
         servidor.setExecutor(Executors.newCachedThreadPool());
@@ -1317,10 +1278,9 @@ public class Servidor {
     // Envío de correo (SMTP de Gmail, sin librerías externas)
 
     static boolean correosActivados() {
-    return !CORREO_ORIGEN.isBlank() && !CLAVE_CORREO.isBlank()
-        && !CORREO_ORIGEN.equals("tu_correo@gmail.com")
-        && !CLAVE_CORREO.equals("tu_clave_de_aplicacion");
-}
+        return !CORREO_ORIGEN.equals("tu_correo@gmail.com")
+            && !CLAVE_CORREO.equals("tu_clave_de_aplicacion");
+    }
 
     static void enviarBienvenida(String destino, String nombre, String rol) throws IOException {
         String tipo = Persona.crear(rol, nombre, destino).getTipo();
@@ -1357,16 +1317,6 @@ public class Servidor {
     }
 
     static void enviarCorreo(String destino, String asunto, String texto) throws IOException {
-        // Imprimimos el correo y el código de verificación en los logs de Railway
-        System.out.println("========================================");
-        System.out.println("📧 [CÓDIGO / CORREO SIMULADO EN RAILWAY]");
-        System.out.println("Para: " + destino);
-        System.out.println("Asunto: " + asunto);
-        System.out.println("Mensaje:\n" + texto);
-        System.out.println("========================================");
-        
-        //Comentamos la conexión por sockets para que Railway no la bloquee:
-        /* 
         SSLSocketFactory fabrica = (SSLSocketFactory) SSLSocketFactory.getDefault();
 
         try (SSLSocket socket = (SSLSocket) fabrica.createSocket("smtp.gmail.com", 465)) {
@@ -1397,7 +1347,6 @@ public class Servidor {
             out.write("QUIT\r\n");
             out.flush();
         }
-        */
     }
 
     // Manda una línea al servidor de correo y verifica el código de respuesta

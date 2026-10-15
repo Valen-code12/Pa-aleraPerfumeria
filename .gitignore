@@ -5,12 +5,3 @@ config.properties
 bin/
 out/
 *.class
-
-.env
-
-config.js
-
-node_modules/
-target/
-clases/
-mysql-workbench-20104/
