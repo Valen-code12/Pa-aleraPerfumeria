@@ -62,24 +62,33 @@ public class Servidor {
     // Contraseña de aplicación de Google (16 letras)
     static final String CLAVE_CORREO = CONFIG.getProperty("CLAVE_CORREO", "");
 
-        static java.util.Properties cargarConfig() {
-        java.util.Properties p = new java.util.Properties();
+    static java.util.Properties cargarConfig() {
+    java.util.Properties p = new java.util.Properties();
+    
+    // Intentar leer el archivo físico solo si existe (para desarrollo local)
+    java.io.File archivoConfig = new java.io.File("config.properties");
+    if (archivoConfig.exists()) {
         try (java.io.Reader r = new java.io.InputStreamReader(
-                new java.io.FileInputStream("config.properties"), java.nio.charset.StandardCharsets.UTF_8)) {
+                new java.io.FileInputStream(archivoConfig), java.nio.charset.StandardCharsets.UTF_8)) {
             p.load(r);
         } catch (java.io.IOException e) {
-            System.out.println("[CONFIG] No se pudo leer config.properties (" + e.getMessage() + "). "
-                    + "Copiá config.properties.example como config.properties y completalo.");
+            System.out.println("[CONFIG] Error al leer config.properties: " + e.getMessage());
         }
-
-        // Las variables de entorno (Railway) tienen prioridad
-        for (String k : new String[]{"URL_BD", "USUARIO_BD", "CLAVE_BD", "CORREO_ORIGEN", "CLAVE_CORREO"}) {
-            if (System.getenv(k) != null) p.setProperty(k, System.getenv(k));
-        }
-
-        return p;
+    } else {
+        System.out.println("[CONFIG] No se encontró config.properties local. Se usarán variables de entorno.");
     }
 
+    // Las variables de entorno (Railway) tienen prioridad absoluta
+    for (String k : new String[]{"URL_BD", "USUARIO_BD", "CLAVE_BD", "CORREO_ORIGEN", "CLAVE_CORREO", "CORREO_PEDIDOS", "COSTO_ENVIO", "ALIAS_MERCADOPAGO"}) {
+        String valorEnv = System.getenv(k);
+        if (valorEnv != null && !valorEnv.isBlank()) {
+            p.setProperty(k, valorEnv);
+        }
+    }
+
+    return p;
+    }
+    
     // Mientras sea true, el código de verificación también se muestra en esta consola.
     // Ponelo en false cuando termines de probar.
     static final boolean DEPURACION = true;
