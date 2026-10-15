@@ -1357,6 +1357,16 @@ public class Servidor {
     }
 
     static void enviarCorreo(String destino, String asunto, String texto) throws IOException {
+        // Imprimimos el correo y el código de verificación en los logs de Railway
+        System.out.println("========================================");
+        System.out.println("📧 [CÓDIGO / CORREO SIMULADO EN RAILWAY]");
+        System.out.println("Para: " + destino);
+        System.out.println("Asunto: " + asunto);
+        System.out.println("Mensaje:\n" + texto);
+        System.out.println("========================================");
+        
+        //Comentamos la conexión por sockets para que Railway no la bloquee:
+        /* 
         SSLSocketFactory fabrica = (SSLSocketFactory) SSLSocketFactory.getDefault();
 
         try (SSLSocket socket = (SSLSocket) fabrica.createSocket("smtp.gmail.com", 465)) {
@@ -1387,6 +1397,7 @@ public class Servidor {
             out.write("QUIT\r\n");
             out.flush();
         }
+        */
     }
 
     // Manda una línea al servidor de correo y verifica el código de respuesta
