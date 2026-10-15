@@ -62,20 +62,11 @@ public class Servidor {
     // Contraseña de aplicación de Google (16 letras)
     static final String CLAVE_CORREO = CONFIG.getProperty("CLAVE_CORREO", "");
 
-    static java.util.Properties cargarConfig() {
+        static java.util.Properties cargarConfig() {
         java.util.Properties p = new java.util.Properties();
         try (java.io.Reader r = new java.io.InputStreamReader(
                 new java.io.FileInputStream("config.properties"), java.nio.charset.StandardCharsets.UTF_8)) {
             p.load(r);
-        } catch (java.io.IOException e) {
-            System.out.println("[CONFIG] No se pudo leer config.properties (" + e.getMessage() + "). "
-                    + "Copiá config.properties.example como config.properties y completalo.");
-        }
-        static java.util.Properties cargarConfig() {
-             java.util.Properties p = new java.util.Properties();
-            try (java.io.Reader r = new java.io.InputStreamReader(
-                     new java.io.FileInputStream("config.properties"), java.nio.charset.StandardCharsets.UTF_8)) {
-                p.load(r);
         } catch (java.io.IOException e) {
             System.out.println("[CONFIG] No se pudo leer config.properties (" + e.getMessage() + "). "
                     + "Copiá config.properties.example como config.properties y completalo.");
@@ -88,7 +79,7 @@ public class Servidor {
 
         return p;
     }
-    
+
     // Mientras sea true, el código de verificación también se muestra en esta consola.
     // Ponelo en false cuando termines de probar.
     static final boolean DEPURACION = true;
