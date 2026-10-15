@@ -1308,9 +1308,10 @@ public class Servidor {
     // Envío de correo (SMTP de Gmail, sin librerías externas)
 
     static boolean correosActivados() {
-        return !CORREO_ORIGEN.equals("tu_correo@gmail.com")
-            && !CLAVE_CORREO.equals("tu_clave_de_aplicacion");
-    }
+    return !CORREO_ORIGEN.isBlank() && !CLAVE_CORREO.isBlank()
+        && !CORREO_ORIGEN.equals("tu_correo@gmail.com")
+        && !CLAVE_CORREO.equals("tu_clave_de_aplicacion");
+}
 
     static void enviarBienvenida(String destino, String nombre, String rol) throws IOException {
         String tipo = Persona.crear(rol, nombre, destino).getTipo();
