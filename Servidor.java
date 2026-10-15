@@ -44,6 +44,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import com.sun.net.httpserver.HttpHandler;
+import java.nio.file.Files;
 
 public class Servidor {
 
