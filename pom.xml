@@ -19,7 +19,10 @@
     </dependency>
   </dependencies>
 
-  <build>
+<build>
+    <!-- Le indicamos a Maven que busque los archivos .java en la raíz -->
+    <sourceDirectory>.</sourceDirectory>
+
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -41,4 +44,5 @@
       </plugin>
     </plugins>
   </build>
+
 </project>
